@@ -1,7 +1,7 @@
 // app/buses/[id]/page.js
 'use client';
 import { useState, useEffect } from 'react';
-import MapView from '../../components/MapView';
+
 
 export default function BusLive({ params }) {
   const { id } = params;

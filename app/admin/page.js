@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Navigation, AlertTriangle, Megaphone, Bell, Users, Settings, Send, X, Plus, FileText, RefreshCw, Eye, Menu, ChevronDown, ChevronUp, Check, User } from 'lucide-react';
+import { MapPin, Navigation, AlertTriangle, Megaphone, Bell, Users, Settings, Send, X, Plus, FileText, RefreshCw, Eye, Menu, ChevronDown, ChevronUp, Check, User, MessageCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
@@ -23,6 +23,8 @@ export default function AdminPage() {
   const [notices, setNotices] = useState([]);
   const [buses, setBuses] = useState([]);
   const [dailyComplaints, setDailyComplaints] = useState(0);
+  const [communityMessages, setCommunityMessages] = useState([]);
+  const [newCommunityMessage, setNewCommunityMessage] = useState('');
 
   // Form states
   const [newAnnouncement, setNewAnnouncement] = useState({
@@ -40,9 +42,8 @@ export default function AdminPage() {
   const [mediaModal, setMediaModal] = useState({ open: false, url: '', type: '' });
   const [selectedBus, setSelectedBus] = useState(null);
   const [expandedComplaint, setExpandedComplaint] = useState(null);
-  const [noticeStudents, setNoticeStudents] = useState({});
 
-  // Real-time bus location tracking
+  // Real-time bus location tracking - SAME LOGIC AS STUDENT PAGE
   useEffect(() => {
     fetchAllData();
     
@@ -58,18 +59,36 @@ export default function AdminPage() {
         },
         (payload) => {
           console.log('Bus location update received:', payload);
-          fetchBusLocations(); // Refresh bus locations when updates occur
+          fetchBusLocations();
         }
       )
       .subscribe();
 
-    // Set interval to refresh bus locations every 10 seconds
+    // Set up real-time updates for community messages
+    const communitySubscription = supabase
+      .channel('community-messages-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'community_messages'
+        },
+        (payload) => {
+          console.log('Community message update received:', payload);
+          fetchCommunityMessages();
+        }
+      )
+      .subscribe();
+
+    // Set interval to refresh bus locations every 5 seconds - SAME AS STUDENT PAGE
     const intervalId = setInterval(() => {
       fetchBusLocations();
-    }, 10000);
+    }, 5000);
 
     return () => {
       busLocationSubscription.unsubscribe();
+      communitySubscription.unsubscribe();
       clearInterval(intervalId);
     };
   }, []);
@@ -83,7 +102,8 @@ export default function AdminPage() {
         fetchStudents(),
         fetchAnnouncements(),
         fetchNotices(),
-        fetchBuses()
+        fetchBuses(),
+        fetchCommunityMessages()
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -93,62 +113,59 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch bus locations with real-time data
+  // CORRECTED: Fetch bus locations with same logic as student page
   const fetchBusLocations = async () => {
     try {
       console.log('Fetching bus locations...');
       
-      // Get all buses with their latest locations
-      const { data: busesWithLocations, error } = await supabase
+      // First, get all buses
+      const { data: allBuses, error: busesError } = await supabase
         .from('buses')
-        .select(`
-          *,
-          bus_locations (
-            latitude,
-            longitude,
-            speed,
-            current_location,
-            updated_at
-          )
-        `);
+        .select('*');
 
-      if (error) throw error;
+      if (busesError) throw busesError;
 
-      console.log('Buses with locations:', busesWithLocations);
+      // Then get latest locations for each bus - SAME LOGIC AS STUDENT PAGE
+      const busLocationsWithData = await Promise.all(
+        allBuses.map(async (bus) => {
+          const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+          
+          const { data: location, error } = await supabase
+            .from('bus_locations')
+            .select('*')
+            .eq('bus_id', bus.id)
+            .gte('updated_at', tenSecondsAgo)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-      const formattedBusLocations = busesWithLocations.map(bus => {
-        // Get the latest location (first one in the array since we order by updated_at desc)
-        const latestLocation = bus.bus_locations && bus.bus_locations.length > 0 
-          ? bus.bus_locations[0] 
-          : null;
+          // Check if location data is recent (within 10 seconds) - SAME AS STUDENT PAGE
+          const isLocationRecent = location && (new Date() - new Date(location.updated_at)) < 10000;
 
-        // Check if location data is recent (within 30 seconds)
-        const isLocationRecent = latestLocation && 
-          latestLocation.updated_at && 
-          (new Date() - new Date(latestLocation.updated_at)) < 30000;
+          return {
+            id: bus.id,
+            bus_id: bus.id,
+            bus_number: bus.bus_number || 'N/A',
+            route_name: bus.route_name || 'No Route',
+            driver_name: bus.driver_name || 'Not Assigned',
+            driver_number: bus.driver_number || null,
+            capacity: bus.capacity || 0,
+            coordinates: location?.latitude && location?.longitude ? 
+              { 
+                lat: location.latitude, 
+                lng: location.longitude 
+              } : null,
+            speed: location?.speed || 0,
+            current_location: location?.current_location || 'Not Available',
+            last_updated: location?.updated_at || null,
+            is_active: isLocationRecent, // SAME LIVE STATUS LOGIC
+            is_live: isLocationRecent // For consistency with student page
+          };
+        })
+      );
 
-        return {
-          id: bus.id,
-          bus_id: bus.id,
-          bus_number: bus.bus_number || 'N/A',
-          route_name: bus.route_name || 'No Route',
-          driver_name: bus.driver_name || 'Not Assigned',
-          driver_number: bus.driver_number || null,
-          capacity: bus.capacity || 0,
-          coordinates: isLocationRecent && latestLocation.latitude && latestLocation.longitude ? 
-            { 
-              lat: latestLocation.latitude, 
-              lng: latestLocation.longitude 
-            } : null,
-          speed: latestLocation?.speed || 0,
-          current_location: latestLocation?.current_location || 'Not Available',
-          last_updated: latestLocation?.updated_at || null,
-          is_active: isLocationRecent
-        };
-      });
-
-      console.log('Formatted bus locations:', formattedBusLocations);
-      setBusLocations(formattedBusLocations);
+      console.log('Formatted bus locations:', busLocationsWithData);
+      setBusLocations(busLocationsWithData);
     } catch (error) {
       console.error('Error fetching bus locations:', error);
       setBusLocations([]);
@@ -232,40 +249,16 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch notices with student information
+  // Fetch notices
   const fetchNotices = async () => {
     try {
-      const { data: noticesData, error } = await supabase
+      const { data, error } = await supabase
         .from('notices')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setNotices(noticesData || []);
-
-      // Fetch students for each notice
-      if (noticesData) {
-        const noticeStudentsMap = {};
-        for (const notice of noticesData) {
-          const { data: noticeStudentsData } = await supabase
-            .from('notice_students')
-            .select(`
-              student_id,
-              students (
-                full_name,
-                usn
-              )
-            `)
-            .eq('notice_id', notice.id);
-
-          noticeStudentsMap[notice.id] = noticeStudentsData?.map(ns => ({
-            student_id: ns.student_id,
-            full_name: ns.students?.full_name,
-            usn: ns.students?.usn
-          })) || [];
-        }
-        setNoticeStudents(noticeStudentsMap);
-      }
+      setNotices(data || []);
     } catch (error) {
       console.error('Error fetching notices:', error);
       setNotices([]);
@@ -284,6 +277,66 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error fetching buses:', error);
       setBuses([]);
+    }
+  };
+
+  // Fetch community messages
+  const fetchCommunityMessages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('community_messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setCommunityMessages(data || []);
+    } catch (error) {
+      console.error('Error fetching community messages:', error);
+      setCommunityMessages([]);
+    }
+  };
+
+  // Send community message
+  const sendCommunityMessage = async (e) => {
+    e.preventDefault();
+    if (!newCommunityMessage.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('community_messages')
+        .insert([
+          {
+            username: 'Admin',
+            message: newCommunityMessage.trim()
+          }
+        ]);
+
+      if (error) throw error;
+
+      setNewCommunityMessage('');
+      fetchCommunityMessages();
+    } catch (error) {
+      console.error('Error sending community message:', error);
+      alert('Error sending message: ' + error.message);
+    }
+  };
+
+  // Delete community message
+  const deleteCommunityMessage = async (messageId) => {
+    try {
+      const { error } = await supabase
+        .from('community_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      alert('Message deleted successfully!');
+      fetchCommunityMessages();
+    } catch (error) {
+      console.error('Error deleting community message:', error);
+      alert('Error deleting message: ' + error.message);
     }
   };
 
@@ -313,12 +366,11 @@ export default function AdminPage() {
     }
   };
 
-  // Create new notice with student selection
+  // Create new notice
   const handleCreateNotice = async (e) => {
     e.preventDefault();
     try {
-      // First create the notice
-      const { data: noticeData, error: noticeError } = await supabase
+      const { data, error } = await supabase
         .from('notices')
         .insert([
           {
@@ -327,24 +379,9 @@ export default function AdminPage() {
             pdf_url: newNotice.pdf_url || null
           }
         ])
-        .select()
-        .single();
+        .select();
 
-      if (noticeError) throw noticeError;
-
-      // Then create notice_students entries for selected students
-      if (newNotice.selectedStudents.length > 0) {
-        const noticeStudentsData = newNotice.selectedStudents.map(studentId => ({
-          notice_id: noticeData.id,
-          student_id: studentId
-        }));
-
-        const { error: noticeStudentsError } = await supabase
-          .from('notice_students')
-          .insert(noticeStudentsData);
-
-        if (noticeStudentsError) throw noticeStudentsError;
-      }
+      if (error) throw error;
 
       alert('Notice created successfully!');
       setNewNotice({ title: '', description: '', pdf_url: '', selectedStudents: [] });
@@ -354,40 +391,6 @@ export default function AdminPage() {
       console.error('Error creating notice:', error);
       alert('Error creating notice: ' + error.message);
     }
-  };
-
-  // Toggle student selection for notice
-  const toggleStudentSelection = (studentId) => {
-    setNewNotice(prev => {
-      const isSelected = prev.selectedStudents.includes(studentId);
-      if (isSelected) {
-        return {
-          ...prev,
-          selectedStudents: prev.selectedStudents.filter(id => id !== studentId)
-        };
-      } else {
-        return {
-          ...prev,
-          selectedStudents: [...prev.selectedStudents, studentId]
-        };
-      }
-    });
-  };
-
-  // Select all students for notice
-  const selectAllStudents = () => {
-    setNewNotice(prev => ({
-      ...prev,
-      selectedStudents: students.map(student => student.student_id)
-    }));
-  };
-
-  // Clear all student selections for notice
-  const clearAllStudents = () => {
-    setNewNotice(prev => ({
-      ...prev,
-      selectedStudents: []
-    }));
   };
 
   // Update complaint status
@@ -479,6 +482,7 @@ export default function AdminPage() {
   const totalBuses = busLocations.length;
   const totalStudents = students.length;
   const totalNotices = notices.length;
+  const totalCommunityMessages = communityMessages.length;
 
   // Mobile responsive complaint card
   const ComplaintCard = ({ complaint }) => {
@@ -637,7 +641,8 @@ export default function AdminPage() {
                 { id: 'complaints', name: 'Complaints', icon: AlertTriangle },
                 { id: 'announcements', name: 'Announcements', icon: Megaphone },
                 { id: 'notices', name: 'Notices', icon: Bell },
-                { id: 'students', name: 'Students', icon: Users }
+                { id: 'students', name: 'Students', icon: Users },
+                { id: 'community', name: 'Community', icon: MessageCircle }
               ].map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -672,7 +677,8 @@ export default function AdminPage() {
                 { id: 'complaints', name: 'Complaints', icon: AlertTriangle },
                 { id: 'announcements', name: 'Announcements', icon: Megaphone },
                 { id: 'notices', name: 'Notices', icon: Bell },
-                { id: 'students', name: 'Students', icon: Users }
+                { id: 'students', name: 'Students', icon: Users },
+                { id: 'community', name: 'Community', icon: MessageCircle }
               ].map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -701,7 +707,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <>
-            {/* Dashboard Tab - FIXED VERSION */}
+            {/* Dashboard Tab */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 {/* Dashboard Stats */}
@@ -756,13 +762,13 @@ export default function AdminPage() {
                   <div className="bg-white rounded-lg shadow p-4 sm:p-6">
                     <div className="flex items-center">
                       <div className="bg-purple-100 p-2 sm:p-3 rounded-lg">
-                        <Bell className="text-purple-600" size={20} />
+                        <MessageCircle className="text-purple-600" size={20} />
                       </div>
                       <div className="ml-3 sm:ml-4">
-                        <p className="text-sm font-medium text-gray-600">Active Notices</p>
-                        <p className="text-xl sm:text-2xl font-semibold text-gray-900">{totalNotices}</p>
+                        <p className="text-sm font-medium text-gray-600">Community Messages</p>
+                        <p className="text-xl sm:text-2xl font-semibold text-gray-900">{totalCommunityMessages}</p>
                         <p className="text-xs text-gray-500 mt-1">
-                          Published Notices
+                          Total Messages
                         </p>
                       </div>
                     </div>
@@ -826,7 +832,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Bus Locations Tab - IMPROVED WITH REAL MAP */}
+            {/* Bus Locations Tab - FIXED WITH SAME LOGIC AS STUDENT PAGE */}
             {activeTab === 'buses' && (
               <div className="space-y-6">
                 {/* Real Google Maps View */}
@@ -985,7 +991,8 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Complaints Tab - UNCHANGED */}
+            {/* Other tabs remain the same */}
+            {/* Complaints Tab */}
             {activeTab === 'complaints' && (
               <div className="bg-white rounded-lg shadow">
                 <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
@@ -1111,8 +1118,333 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Announcements, Notices, and Students tabs remain the same */}
-            {/* ... (rest of the code remains unchanged) ... */}
+            {/* Announcements Tab */}
+            {activeTab === 'announcements' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <h2 className="text-lg font-semibold text-gray-900">Announcements ({announcements.length})</h2>
+                    <button
+                      onClick={() => setShowAnnouncementForm(true)}
+                      className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm w-full sm:w-auto justify-center"
+                    >
+                      <Plus size={16} className="mr-2" />
+                      New Announcement
+                    </button>
+                  </div>
+                  <div className="p-4 sm:p-6">
+                    <div className="space-y-4">
+                      {announcements.map((announcement) => (
+                        <div key={announcement.id} className="border border-gray-200 rounded-lg p-4">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{announcement.title}</h3>
+                          <p className="text-gray-600 text-sm sm:text-base mb-2">{announcement.message}</p>
+                          <p className="text-xs text-gray-500">Posted on {formatDate(announcement.created_at)}</p>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {announcements.length === 0 && (
+                      <div className="text-center py-8 sm:py-12">
+                        <Megaphone size={32} className="text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-500 text-sm">No announcements found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Announcement Form Modal */}
+                {showAnnouncementForm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Create Announcement</h3>
+                        <button onClick={() => setShowAnnouncementForm(false)} className="text-gray-400 hover:text-gray-600">
+                          <X size={20} />
+                        </button>
+                      </div>
+                      <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                          <input
+                            type="text"
+                            required
+                            value={newAnnouncement.title}
+                            onChange={(e) => setNewAnnouncement(prev => ({ ...prev, title: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="Enter announcement title"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Message *</label>
+                          <textarea
+                            required
+                            rows={4}
+                            value={newAnnouncement.message}
+                            onChange={(e) => setNewAnnouncement(prev => ({ ...prev, message: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="Enter announcement message"
+                          />
+                        </div>
+                        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowAnnouncementForm(false)}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          >
+                            Create Announcement
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Notices Tab */}
+            {activeTab === 'notices' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <h2 className="text-lg font-semibold text-gray-900">Notices ({notices.length})</h2>
+                    <button
+                      onClick={() => setShowNoticeForm(true)}
+                      className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm w-full sm:w-auto justify-center"
+                    >
+                      <Plus size={16} className="mr-2" />
+                      New Notice
+                    </button>
+                  </div>
+                  <div className="p-4 sm:p-6">
+                    <div className="space-y-4">
+                      {notices.map((notice) => (
+                        <div key={notice.id} className="border border-gray-200 rounded-lg p-4">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
+                          <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
+                          {notice.pdf_url && (
+                            <a
+                              href={notice.pdf_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm"
+                            >
+                              <FileText size={14} className="mr-1" />
+                              View PDF
+                            </a>
+                          )}
+                          <p className="text-xs text-gray-500 mt-2">Posted on {formatDate(notice.created_at)}</p>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {notices.length === 0 && (
+                      <div className="text-center py-8 sm:py-12">
+                        <Bell size={32} className="text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-500 text-sm">No notices found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notice Form Modal */}
+                {showNoticeForm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold">Create Notice</h3>
+                        <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
+                          <X size={20} />
+                        </button>
+                      </div>
+                      <form onSubmit={handleCreateNotice} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                          <input
+                            type="text"
+                            required
+                            value={newNotice.title}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="Enter notice title"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+                          <textarea
+                            required
+                            rows={4}
+                            value={newNotice.description}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="Enter notice description"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (Optional)</label>
+                          <input
+                            type="url"
+                            value={newNotice.pdf_url}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="https://example.com/notice.pdf"
+                          />
+                        </div>
+                        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowNoticeForm(false)}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          >
+                            Create Notice
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Students Tab */}
+            {activeTab === 'students' && (
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-lg font-semibold text-gray-900">Student List ({students.length} students)</h2>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USN</th>
+                          <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                          <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
+                          <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
+                          <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
+                          <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fees Due</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {students.map((student) => (
+                          <tr key={student.student_id}>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
+                              {student.usn}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
+                              {student.full_name}
+                            </td>
+                            <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
+                              {student.branch}
+                            </td>
+                            <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
+                              {student.class} {student.division}
+                            </td>
+                            <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
+                              {student.phone}
+                            </td>
+                            <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                              <select
+                                value={student.fees_due || 'due'}
+                                onChange={(e) => updateFeesStatus(student.student_id, e.target.value)}
+                                className={`text-xs font-semibold rounded-full px-2 sm:px-3 py-1 border ${getFeesStatusColor(student.fees_due)}`}
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="half_paid">Half Paid</option>
+                                <option value="due">Due</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {students.length === 0 && (
+                    <div className="text-center py-8 sm:py-12">
+                      <Users size={32} className="text-gray-300 mx-auto mb-2" />
+                      <p className="text-gray-500 text-sm">No students found in database</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Community Tab */}
+            {activeTab === 'community' && (
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-lg font-semibold text-gray-900">Community Messages ({communityMessages.length})</h2>
+                </div>
+                <div className="p-4 sm:p-6">
+                  {/* Message Input */}
+                  <form onSubmit={sendCommunityMessage} className="mb-6">
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={newCommunityMessage}
+                        onChange={(e) => setNewCommunityMessage(e.target.value)}
+                        placeholder="Type your message..."
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm"
+                      >
+                        <Send size={16} className="mr-2" />
+                        Send
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Messages List */}
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {communityMessages.map((message) => (
+                      <div key={message.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-semibold text-gray-900 text-sm">{message.username}</span>
+                            {message.username === 'Admin' && (
+                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+                                Admin
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-gray-500">{formatDate(message.created_at)}</span>
+                            <button
+                              onClick={() => deleteCommunityMessage(message.id)}
+                              className="text-red-600 hover:text-red-800 text-xs"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-gray-700 text-sm">{message.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {communityMessages.length === 0 && (
+                    <div className="text-center py-8 sm:py-12">
+                      <MessageCircle size={32} className="text-gray-300 mx-auto mb-2" />
+                      <p className="text-gray-500 text-sm">No community messages yet</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

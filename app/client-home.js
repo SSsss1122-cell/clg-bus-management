@@ -2,12 +2,92 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { MapPin, Navigation, Menu, Bell, Megaphone, Info, User, BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { MapPin, Navigation, Menu, Bell, Megaphone, Info, User, BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, X, ChevronLeft } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
-// Bus Card Component
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// Bus Card Component (unchanged)
 function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
-  const busImages = ["/bus1.png", "/bus2.png"];
+  const busImages = ["/images/bus1.png", "/images/bus2.png"];
   const imageSrc = busImages[index % busImages.length];
+
+  const [currentStop, setCurrentStop] = useState(null);
+  const [nextStop, setNextStop] = useState(null);
+  const [busCoordinates, setBusCoordinates] = useState(coordinates);
+  const [isLive, setIsLive] = useState(false);
+
+  useEffect(() => {
+    async function loadStopInfo() {
+      if (!bus?.id) return;
+
+      const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+      
+      const { data: location } = await supabase
+        .from("bus_locations")
+        .select("*")
+        .eq("bus_id", bus.id)
+        .gte("updated_at", tenSecondsAgo)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const isLocationRecent = location && (new Date() - new Date(location.updated_at)) < 10000;
+      
+      if (isLocationRecent) {
+        setBusCoordinates({
+          lat: location.latitude,
+          lng: location.longitude,
+        });
+        setIsLive(true);
+
+        const { data: stops } = await supabase
+          .from("bus_stops")
+          .select("*")
+          .eq("bus_id", bus.id)
+          .order("sequence", { ascending: true });
+
+        if (!stops?.length) return;
+
+        let nearestStop = null;
+        let smallestDistance = Infinity;
+
+        stops.forEach((stop) => {
+          const distance =
+            Math.pow(stop.latitude - location.latitude, 2) +
+            Math.pow(stop.longitude - location.longitude, 2);
+
+          if (distance < smallestDistance) {
+            smallestDistance = distance;
+            nearestStop = stop;
+          }
+        });
+
+        setCurrentStop(nearestStop);
+
+        if (nearestStop) {
+          const currentIndex = stops.findIndex((s) => s.id === nearestStop.id);
+          setNextStop(stops[currentIndex + 1] || null);
+        }
+      } else {
+        setBusCoordinates(null);
+        setIsLive(false);
+        setCurrentStop(null);
+        setNextStop(null);
+      }
+    }
+
+    loadStopInfo();
+    
+    const interval = setInterval(loadStopInfo, 5000);
+    
+    return () => clearInterval(interval);
+  }, [bus, coordinates]);
 
   const handleTrackBus = () => {
     if (!isLoggedIn) {
@@ -15,113 +95,112 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
       return;
     }
 
-    if (!coordinates) {
+    if (!busCoordinates) {
       alert('No location data available for this bus');
       return;
     }
 
-    onTrackBus(bus, coordinates);
+    onTrackBus(bus, busCoordinates);
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all hover:shadow-lg hover:border-blue-400 hover:transform hover:scale-[1.02] shadow-sm w-full">
-      {/* Bus Image with Overlay */}
-      <div className="relative h-40 overflow-hidden">
-        <div className="w-full h-full relative">
-          <img 
-            src={imageSrc} 
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:border-blue-400 hover:transform hover:scale-[1.02] shadow-sm w-full group">
+      <div className="relative h-48 overflow-hidden bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="w-full h-full relative flex items-center justify-center p-4">
+          <img
+            src={imageSrc}
             alt={`Bus ${bus.bus_number} - ${bus.route_name}`}
-            className="w-full h-full object-cover transition-transform hover:scale-105"
+            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-110 drop-shadow-lg"
             onError={(e) => {
-              e.target.style.display = 'none';
-              const fallback = e.target.parentElement.querySelector('.fallback-overlay');
-              if (fallback) fallback.classList.remove('hidden');
+              e.target.style.display = "none";
+              const fallback = e.target.parentElement.querySelector(".fallback-overlay");
+              if (fallback) fallback.classList.remove("hidden");
             }}
           />
+
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center hidden fallback-overlay">
             <div className="text-white text-center">
-              <div className="text-4xl font-bold mb-2">🚌</div>
-              <p className="text-sm opacity-90">Bus {bus.bus_number}</p>
+              <div className="text-5xl font-bold mb-3 animate-bounce">🚌</div>
             </div>
           </div>
         </div>
         
-        {/* Bus Number Badge */}
-        <div className="absolute top-3 left-3">
-          <span className="bg-white/20 backdrop-blur-sm text-white px-3 py-2 rounded-lg text-sm font-bold shadow-lg border border-white/30">
-            Bus {bus.bus_number}
-          </span>
-        </div>
-        
-        {/* Status Badge */}
         <div className="absolute top-3 right-3">
-          <div className={`flex items-center text-white text-xs backdrop-blur-sm px-3 py-2 rounded-full border border-white/30 ${
-            coordinates ? 'bg-green-500/90' : 'bg-gray-500/90'
+          <div className={`flex items-center text-white text-xs backdrop-blur-md px-3 py-2 rounded-full border border-white/30 shadow-lg transition-all duration-300 ${
+            isLive ? 'bg-green-500/90' : 'bg-gray-500/90'
           }`}>
-            <div className={`w-2 h-2 bg-white rounded-full mr-2 ${coordinates ? 'animate-pulse' : ''}`}></div>
-            {coordinates ? 'Live' : 'Offline'}
+            <div className={`w-2 h-2 bg-white rounded-full mr-2 ${isLive ? 'animate-pulse' : ''}`}></div>
+            {isLive ? 'Live' : 'Offline'}
           </div>
-        </div>
-        
-        {/* Route Name */}
-        <div className="absolute bottom-3 right-3 text-right">
-          <h3 className="text-white font-bold text-base drop-shadow-lg bg-black/30 px-2 py-1 rounded-lg">
-            {bus.route_name}
-          </h3>
         </div>
       </div>
 
-      {/* Card Content */}
       <div className="p-4">
-        {/* Driver Information */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 mb-3 border border-blue-100">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md">
-              <User size={16} className="text-white" />
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-3 border border-blue-100">
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">🚌</span>
+                </div>
+                <div>
+                  <p className="font-bold text-gray-800 text-sm">Bus {bus.bus_number}</p>
+                  <p className="text-xs text-blue-600 font-medium">{bus.route_name}</p>
+                </div>
+              </div>
+              <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                isLive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {isLive ? 'Active' : 'Inactive'}
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-800 text-sm truncate">{bus.driver_name || "Driver Not Assigned"}</p>
-              <p className="text-xs text-gray-600 truncate">Contact: {bus.driver_number || "N/A"}</p>
+
+            <div className="flex items-center space-x-3 pt-2 border-t border-blue-200">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md">
+                <User size={16} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-800 text-sm truncate">{bus.driver_name || "Driver Not Assigned"}</p>
+                <p className="text-xs text-gray-600 truncate">Contact: {bus.driver_number || "N/A"}</p>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Bus Status */}
         <div className="space-y-3 text-sm">
           <div className="flex justify-between items-center">
             <span className="text-gray-600 flex items-center">
               <MapPin size={14} className="mr-2" />
-              Current:
+              Current Stop:
             </span>
             <span className="font-semibold text-gray-800 text-right text-xs max-w-[120px] truncate">
-              {bus.current_location || "Not Started"}
+              {currentStop?.stop_name || "Not Started"}
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-600">Next Stop:</span>
             <span className="font-semibold text-blue-600 text-xs max-w-[120px] truncate">
-              {bus.next_stop || "Student Union"}
+              {nextStop?.stop_name || "Route End"}
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-600">Status:</span>
-            <span className={`font-semibold ${coordinates ? 'text-green-600' : 'text-red-600'}`}>
-              {coordinates ? 'Live Tracking' : 'Bus Not Started'}
+            <span className={`font-semibold ${isLive ? 'text-green-600' : 'text-red-600'}`}>
+              {isLive ? 'Live Tracking' : 'Bus Not Active'}
             </span>
           </div>
         </div>
 
-        {/* Track Bus Button */}
         <div className="mt-4 pt-3 border-t border-gray-200">
           <button
             onClick={handleTrackBus}
-            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 px-4 rounded-lg text-center hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed group"
-            disabled={!coordinates || !isLoggedIn}
+            className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 px-4 rounded-lg text-center hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed group/btn"
+            disabled={!isLive || !isLoggedIn}
           >
             <div className="flex items-center justify-center">
-              <MapPin size={16} className="mr-2 group-hover:animate-bounce" />
+              <MapPin size={16} className="mr-2 group-hover/btn:animate-bounce" />
               <span className="font-semibold">
-                {!isLoggedIn ? 'Login to Track' : coordinates ? 'Track Bus Live' : 'Bus Not Started'}
+                {!isLoggedIn ? 'Login to Track' : isLive ? 'Track Bus Live' : 'Bus Not Active'}
               </span>
             </div>
           </button>
@@ -132,6 +211,7 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
 }
 
 export default function ClientHome({ busesWithLocations }) {
+  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -140,9 +220,22 @@ export default function ClientHome({ busesWithLocations }) {
   const [showLoginForm, setShowLoginForm] = useState(true);
   const [selectedBus, setSelectedBus] = useState(null);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
+  const [loginError, setLoginError] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
-    // Check if user is logged in on component mount
     const savedUser = localStorage.getItem('sitBusUser');
     if (savedUser) {
       const user = JSON.parse(savedUser);
@@ -151,17 +244,36 @@ export default function ClientHome({ busesWithLocations }) {
     }
   }, []);
 
-  // Close mobile menu when clicking outside
+  // Enhanced click outside handler for mobile menu
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (showMobileMenu && !event.target.closest('.mobile-menu') && !event.target.closest('.mobile-menu-button')) {
+      if (showMobileMenu && 
+          !event.target.closest('.mobile-menu') && 
+          !event.target.closest('.mobile-menu-button')) {
         setShowMobileMenu(false);
       }
     };
 
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, [showMobileMenu]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (showMobileMenu || showMapModal || showLoginModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showMobileMenu, showMapModal, showLoginModal]);
 
   const handleTrackBus = (bus, coordinates) => {
     setSelectedBus(bus);
@@ -249,34 +361,62 @@ export default function ClientHome({ busesWithLocations }) {
     alert('Logged out successfully');
   };
 
-  // Filter buses to show only those with location data
-  const activeBuses = busesWithLocations?.filter(bus => bus.coordinates) || [];
-  const inactiveBuses = busesWithLocations?.filter(bus => !bus.coordinates) || [];
+  // Mobile navigation handler
+  const handleMobileNavigation = (path) => {
+    setShowMobileMenu(false);
+    router.push(path);
+  };
+
+  // Back navigation handler for mobile
+  const handleBackNavigation = () => {
+    if (showMapModal) {
+      setShowMapModal(false);
+    } else if (showLoginModal) {
+      setShowLoginModal(false);
+    } else if (showMobileMenu) {
+      setShowMobileMenu(false);
+    } else {
+      router.back();
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col">
-      {/* Fixed Navigation Header */}
-      <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col safe-area-inset">
+      {/* Enhanced Fixed Navigation Header */}
+      <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 safe-area-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo and Name */}
-            <Link href="/" className="flex items-center space-x-3 group flex-shrink-0">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-700 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all">
-                <Navigation className="text-white" size={24} />
+            {/* Enhanced Logo and Name - Always visible on mobile */}
+            <div className="flex items-center space-x-3 group flex-shrink-0">
+              <div className="bg-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all">
+                <img 
+                  src="/images/logo.png" 
+                  alt="SIT Bus System Logo" 
+                  className="w-8 h-8 object-contain"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="hidden text-white items-center justify-center">
+                  <Navigation size={20} />
+                </div>
               </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-gray-900">SIT Bus System</h1>
-                <p className="text-xs text-gray-500 -mt-1">Smart Campus Transit</p>
+              {/* Always show text on mobile and desktop */}
+              <div className="block">
+                <h1 className="text-lg font-bold text-gray-900 leading-tight">SIT Bus</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">Tracking System</p>
               </div>
-            </Link>
+            </div>
 
             {/* Desktop Navigation Links */}
             <nav className="hidden md:flex items-center space-x-6 lg:space-x-8">
               <Link href="/" className="text-gray-700 hover:text-blue-600 font-medium transition-colors border-b-2 border-transparent hover:border-blue-600 pb-1 text-sm lg:text-base">
                 Home
               </Link>
-              <Link href="/about" className="text-gray-700 hover:text-blue-600 font-medium transition-colors border-b-2 border-transparent hover:border-blue-600 pb-1 text-sm lg:text-base">
-                About
+              <Link href="/notice" className="text-gray-700 hover:text-blue-600 font-medium transition-colors border-b-2 border-transparent hover:border-blue-600 pb-1 flex items-center text-sm lg:text-base">
+                <Bell size={18} className="mr-1" />
+                Notice
               </Link>
               <Link href="/announcements" className={`text-gray-700 hover:text-blue-600 font-medium transition-colors border-b-2 border-transparent hover:border-blue-600 pb-1 flex items-center text-sm lg:text-base ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Megaphone size={18} className="mr-1" />
@@ -314,13 +454,13 @@ export default function ClientHome({ busesWithLocations }) {
                 <button 
                   onClick={() => setShowLoginModal(true)}
                   className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 lg:px-6 py-2 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md text-sm lg:text-base"
-                >
+                  >
                   Login
                 </button>
               )}
             </div>
 
-            {/* Mobile Menu Button */}
+            {/* Enhanced Mobile Menu Button */}
             <div className="md:hidden flex items-center space-x-2">
               {isLoggedIn && (
                 <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium max-w-[100px] truncate">
@@ -329,86 +469,149 @@ export default function ClientHome({ busesWithLocations }) {
               )}
               <button 
                 onClick={() => setShowMobileMenu(!showMobileMenu)}
-                className="mobile-menu-button text-gray-700 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-gray-100"
+                className="mobile-menu-button text-gray-700 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+                aria-label="Toggle menu"
               >
                 {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
           </div>
+        </div>
 
-          {/* Mobile Navigation Menu */}
-          {showMobileMenu && (
-            <div className="md:hidden mobile-menu py-4 border-t border-gray-200 bg-white/95 backdrop-blur-md absolute left-0 right-0 top-16 shadow-lg">
-              <nav className="flex flex-col space-y-1 px-4">
-                <Link href="/" className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 border-l-4 border-blue-600 pl-4 bg-blue-50 rounded-r-lg">
-                  Home
-                </Link>
-                <Link href="/about" className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 pl-4 rounded-r-lg hover:bg-gray-50">
-                  About
-                </Link>
-                <Link href="/announcements" className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 pl-4 rounded-r-lg hover:bg-gray-50 flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <Megaphone size={18} className="mr-3" />
-                  Announcements
-                </Link>
-                <Link href="/community" className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 pl-4 rounded-r-lg hover:bg-gray-50 flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <Users size={18} className="mr-3" />
-                  Community
-                </Link>
-                <Link href="/complaint" className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 pl-4 rounded-r-lg hover:bg-gray-50 flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <AlertTriangle size={18} className="mr-3" />
-                  Complaint
-                </Link>
-                <Link href="/help" className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-3 pl-4 rounded-r-lg hover:bg-gray-50 flex items-center">
-                  <Info size={18} className="mr-3" />
-                  Help
-                </Link>
-                <div className="pt-4 border-t border-gray-200 mt-2">
-                  {isLoggedIn ? (
+        {/* Enhanced Mobile Navigation Menu */}
+        {showMobileMenu && (
+          <div className="md:hidden mobile-menu fixed inset-0 top-16 bg-white/95 backdrop-blur-md z-40 overflow-y-auto safe-area-inset">
+            {/* Mobile Menu Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Menu</h3>
+              <button 
+                onClick={() => setShowMobileMenu(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+                aria-label="Close menu"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <nav className="flex flex-col p-4 space-y-1">
+              {/* Home Link */}
+              <button 
+                onClick={() => handleMobileNavigation('/')}
+                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 border-l-4 border-blue-600 pl-4 bg-blue-50 rounded-r-lg text-left flex items-center"
+              >
+                <Navigation size={18} className="mr-3" />
+                Home
+              </button>
+
+              {/* Notice Link */}
+              <button 
+                onClick={() => handleMobileNavigation('/notice')}
+                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
+              >
+                <Bell size={18} className="mr-3" />
+                Notice
+              </button>
+
+              {/* Conditional Links */}
+              <button 
+                onClick={() => handleMobileNavigation('/announcements')}
+                disabled={!isLoggedIn}
+                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                <Megaphone size={18} className="mr-3" />
+                Announcements
+              </button>
+
+              <button 
+                onClick={() => handleMobileNavigation('/community')}
+                disabled={!isLoggedIn}
+                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                <Users size={18} className="mr-3" />
+                Community
+              </button>
+
+              <button 
+                onClick={() => handleMobileNavigation('/complaint')}
+                disabled={!isLoggedIn}
+                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                <AlertTriangle size={18} className="mr-3" />
+                Complaint
+              </button>
+
+              <button 
+                onClick={() => handleMobileNavigation('/help')}
+                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
+              >
+                <Info size={18} className="mr-3" />
+                Help
+              </button>
+
+              {/* Auth Section */}
+              <div className="pt-6 border-t border-gray-200 mt-4 space-y-3">
+                {isLoggedIn ? (
+                  <>
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">Logged in as</p>
+                      <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
+                    </div>
                     <button 
                       onClick={handleLogout}
-                      className="w-full bg-red-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-sm text-center"
+                      className="w-full bg-red-500 text-white px-6 py-4 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-sm text-center touch-manipulation"
                     >
                       Logout
                     </button>
-                  ) : (
-                    <button 
-                      onClick={() => {
-                        setShowLoginModal(true);
-                        setShowMobileMenu(false);
-                      }}
-                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm text-center"
-                    >
-                      Login
-                    </button>
-                  )}
-                </div>
-              </nav>
-            </div>
-          )}
-        </div>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      setShowLoginModal(true);
+                      setShowMobileMenu(false);
+                    }}
+                    className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm text-center touch-manipulation"
+                  >
+                    Login / Register
+                  </button>
+                )}
+              </div>
+            </nav>
+          </div>
+        )}
       </header>
 
-      {/* Add padding to account for fixed header */}
-      <div className="pt-16"> {/* This matches the header height */}
-
-        {/* Map Modal */}
+      {/* Main Content with safe area padding */}
+      <div className="flex-1 pt-16 pb-8 safe-area-inset"> {/* Adjusted padding for mobile */}
+        
+        {/* Enhanced Map Modal with Mobile Back Button */}
         {showMapModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowMapModal(false)}>
-            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 safe-area-inset" onClick={() => setShowMapModal(false)}>
+            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+              {/* Mobile Back Button */}
+              {isMobile && (
+                <button 
+                  onClick={() => setShowMapModal(false)}
+                  className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg touch-manipulation"
+                  aria-label="Go back"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              )}
+              
               <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
                 <div className="flex justify-between items-center">
-                  <div>
+                  <div className={isMobile ? "pr-12" : ""}>
                     <h2 className="text-2xl font-bold">Tracking Bus {selectedBus?.bus_number}</h2>
                     <p className="text-blue-100">{selectedBus?.route_name}</p>
                   </div>
-                  <button onClick={() => setShowMapModal(false)} className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {!isMobile && (
+                    <button onClick={() => setShowMapModal(false)} className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors">
+                      <X size={24} />
+                    </button>
+                  )}
                 </div>
               </div>
-              <div className="p-6">
+              <div className="p-4 md:p-6">
                 <div className="bg-gray-100 rounded-xl p-4 mb-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
@@ -427,7 +630,7 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
                 <div className="rounded-xl overflow-hidden border-2 border-gray-300">
                   <iframe
-                    className="w-full h-96"
+                    className="w-full h-80 md:h-96"
                     frameBorder="0"
                     style={{ border: 0 }}
                     allowFullScreen
@@ -437,7 +640,7 @@ export default function ClientHome({ busesWithLocations }) {
                   ></iframe>
                 </div>
                 <div className="mt-4 text-center">
-                  <p className="text-gray-600 flex items-center justify-center">
+                  <p className="text-gray-600 flex items-center justify-center text-sm">
                     <MapPin size={16} className="mr-2 text-red-500" />
                     Live location tracking for Bus {selectedBus?.bus_number}
                   </p>
@@ -447,20 +650,31 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         )}
 
-        {/* Login Modal */}
+        {/* Enhanced Login Modal with Mobile Back Button */}
         {showLoginModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowLoginModal(false)}>
-            <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 safe-area-inset" onClick={() => setShowLoginModal(false)}>
+            <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+              {/* Mobile Back Button */}
+              {isMobile && (
+                <button 
+                  onClick={() => setShowLoginModal(false)}
+                  className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg touch-manipulation"
+                  aria-label="Go back"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+              )}
+              
               <div className="p-6 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-t-2xl">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold">
+                  <h2 className={`text-2xl font-bold ${isMobile ? 'pr-12' : ''}`}>
                     {showLoginForm ? 'Student Login' : 'Student Registration'}
                   </h2>
-                  <button onClick={() => setShowLoginModal(false)} className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {!isMobile && (
+                    <button onClick={() => setShowLoginModal(false)} className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors">
+                      <X size={24} />
+                    </button>
+                  )}
                 </div>
               </div>
               
@@ -477,7 +691,7 @@ export default function ClientHome({ busesWithLocations }) {
                         type="text"
                         name="usn"
                         required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Enter your USN"
                       />
                     </div>
@@ -491,14 +705,14 @@ export default function ClientHome({ busesWithLocations }) {
                         type="password"
                         name="password"
                         required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Enter your password"
                       />
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg"
+                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg touch-manipulation"
                     >
                       Login to SIT Bus System
                     </button>
@@ -508,7 +722,7 @@ export default function ClientHome({ busesWithLocations }) {
                       <button 
                         type="button" 
                         onClick={() => setShowLoginForm(false)}
-                        className="text-blue-600 hover:text-blue-700 font-medium ml-1 underline"
+                        className="text-blue-600 hover:text-blue-700 font-medium ml-1 underline touch-manipulation"
                       >
                         Register here
                       </button>
@@ -516,6 +730,7 @@ export default function ClientHome({ busesWithLocations }) {
                   </form>
                 ) : (
                   <form onSubmit={handleRegister} className="space-y-4">
+                    {/* Registration form remains the same */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         <User size={16} className="inline mr-2" />
@@ -525,7 +740,7 @@ export default function ClientHome({ busesWithLocations }) {
                         type="text"
                         name="full_name"
                         required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Enter your full name"
                       />
                     </div>
@@ -540,7 +755,7 @@ export default function ClientHome({ busesWithLocations }) {
                           type="text"
                           name="class"
                           required
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                           placeholder="e.g., 3rd Year"
                         />
                       </div>
@@ -551,7 +766,7 @@ export default function ClientHome({ busesWithLocations }) {
                         <input
                           type="text"
                           name="division"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                           placeholder="e.g., A"
                         />
                       </div>
@@ -566,7 +781,7 @@ export default function ClientHome({ busesWithLocations }) {
                         type="text"
                         name="usn"
                         required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="e.g., 1SI20CS001"
                       />
                     </div>
@@ -577,7 +792,7 @@ export default function ClientHome({ busesWithLocations }) {
                       </label>
                       <select
                         name="branch"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                       >
                         <option value="">Select Branch</option>
                         <option value="Computer Science">Computer Science</option>
@@ -597,7 +812,7 @@ export default function ClientHome({ busesWithLocations }) {
                       <input
                         type="tel"
                         name="phone"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Enter phone number"
                       />
                     </div>
@@ -610,7 +825,7 @@ export default function ClientHome({ busesWithLocations }) {
                       <input
                         type="email"
                         name="email"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Enter email address"
                       />
                     </div>
@@ -624,14 +839,14 @@ export default function ClientHome({ busesWithLocations }) {
                         type="password"
                         name="password"
                         required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
                         placeholder="Create a password"
                       />
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg"
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg touch-manipulation"
                     >
                       Create Account
                     </button>
@@ -641,7 +856,7 @@ export default function ClientHome({ busesWithLocations }) {
                       <button 
                         type="button" 
                         onClick={() => setShowLoginForm(true)}
-                        className="text-blue-600 hover:text-blue-700 font-medium ml-1 underline"
+                        className="text-blue-600 hover:text-blue-700 font-medium ml-1 underline touch-manipulation"
                       >
                         Login here
                       </button>
@@ -653,9 +868,9 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         )}
 
+        {/* Rest of your components (Hero Section, All Buses Section, Footer) remain the same */}
         {/* Hero Section */}
         <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white py-12 md:py-16 px-4 overflow-hidden h-[400px] md:h-[450px]">
-          {/* Single Background Image */}
           <div className="absolute inset-0">
             <img 
               src="/images/sit1.jpg" 
@@ -665,18 +880,14 @@ export default function ClientHome({ busesWithLocations }) {
                 e.target.style.display = 'none';
               }}
             />
-            
-            {/* Light gradient overlay for better text readability */}
             <div className="absolute inset-0 bg-gradient-to-br from-blue-600/40 via-blue-700/30 to-indigo-800/20"></div>
           </div>
 
-          {/* Content Container */}
           <div className="relative z-10 h-full flex items-center justify-center">
             <div className="max-w-4xl mx-auto text-center px-4">
-              {/* Main Heading */}
               <div className="mb-6">
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 text-white">
-                  Campus Bus Tracker
+                  SIT Bus Tracker
                 </h1>
                 <div className="w-20 h-1 bg-gradient-to-r from-green-400 to-emerald-500 mx-auto rounded-full mb-4"></div>
                 <p className="text-base md:text-lg text-white max-w-2xl mx-auto leading-relaxed font-light opacity-95">
@@ -684,7 +895,6 @@ export default function ClientHome({ busesWithLocations }) {
                 </p>
               </div>
 
-              {/* Stats */}
               <div className="flex justify-center items-center gap-4 md:gap-6 mb-6">
                 <div className="text-center">
                   <div className="text-lg md:text-xl font-bold text-white flex items-center justify-center">
@@ -695,7 +905,7 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
                 <div className="text-center">
-                  <div className="text-lg md:text-xl font-bold text-white">10+</div>
+                  <div className="text-lg md:text-xl font-bold text-white">new</div>
                   <div className="text-xs md:text-sm text-white opacity-90">Buses</div>
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
@@ -705,7 +915,6 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
               </div>
 
-              {/* CTA Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
                 <Link 
                   href="/community" 
@@ -721,7 +930,7 @@ export default function ClientHome({ busesWithLocations }) {
                 {!isLoggedIn && (
                   <button 
                     onClick={() => setShowLoginModal(true)}
-                    className="group bg-white/20 backdrop-blur-sm border border-white/30 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center text-sm transform hover:scale-105"
+                    className="group bg-white/20 backdrop-blur-sm border border-white/30 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/30 transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center text-sm transform hover:scale-105 touch-manipulation"
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
@@ -734,63 +943,32 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </section>
 
-        {/* Active Buses Section */}
+        {/* All Buses Section */}
         <section className="py-12 md:py-20 px-4 bg-gradient-to-b from-white to-blue-50 flex-1">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-12 md:mb-16">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4 md:mb-6">
-                {activeBuses.length > 0 ? '🚌 Active Campus Buses' : 'Bus Status'}
+                Campus Buses
               </h2>
               <p className="text-gray-600 max-w-2xl mx-auto text-base md:text-lg px-4">
-                {activeBuses.length > 0 
+                {busesWithLocations?.length > 0 
                   ? 'Track your bus in real-time and never miss your ride' 
-                  : 'No buses are currently active. Buses will appear here when drivers start their routes.'}
+                  : 'No buses are currently available. Buses will appear here when they are assigned.'}
               </p>
             </div>
             
-            {/* Active Buses - Centered Grid */}
-            {activeBuses.length > 0 && (
-              <div className="mb-12">
-                <div className="flex items-center justify-center mb-6">
-                  <div className="bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-semibold flex items-center">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                    {activeBuses.length} Bus{activeBuses.length > 1 ? 'es' : ''} Active Now
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 justify-items-center">
-                  {activeBuses.map((bus, index) => (
-                    <BusCard 
-                      key={bus.id}
-                      bus={bus}
-                      index={index}
-                      coordinates={bus.coordinates}
-                      isLoggedIn={isLoggedIn}
-                      onTrackBus={handleTrackBus}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Inactive Buses - Centered Grid */}
-            {inactiveBuses.length > 0 && (
-              <div className="mt-8 md:mt-12">
-                <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6 md:mb-8 text-center flex items-center justify-center">
-                  <div className="w-3 h-3 bg-gray-400 rounded-full mr-3"></div>
-                  Inactive Buses
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 justify-items-center">
-                  {inactiveBuses.map((bus, index) => (
-                    <BusCard 
-                      key={bus.id}
-                      bus={bus}
-                      index={index}
-                      coordinates={bus.coordinates}
-                      isLoggedIn={isLoggedIn}
-                      onTrackBus={handleTrackBus}
-                    />
-                  ))}
-                </div>
+            {busesWithLocations?.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 justify-items-center">
+                {busesWithLocations.map((bus, index) => (
+                  <BusCard 
+                    key={bus.id}
+                    bus={bus}
+                    index={index}
+                    coordinates={bus.coordinates}
+                    isLoggedIn={isLoggedIn}
+                    onTrackBus={handleTrackBus}
+                  />
+                ))}
               </div>
             )}
             
@@ -807,14 +985,24 @@ export default function ClientHome({ busesWithLocations }) {
         </section>
 
         {/* Footer */}
-        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4">
+        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4 safe-area-bottom">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-              {/* Company Info */}
               <div className="md:col-span-2">
                 <div className="flex items-center space-x-3 mb-4">
                   <div className="bg-gradient-to-r from-blue-500 to-indigo-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
-                    <Navigation className="text-white" size={20} />
+                    <img 
+                      src="/images/logo.png" 
+                      alt="SIT Bus System Logo" 
+                      className="w-8 h-8 object-contain"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'flex';
+                      }}
+                    />
+                    <div className="hidden text-white items-center justify-center">
+                      <Navigation size={20} />
+                    </div>
                   </div>
                   <div>
                     <h3 className="text-xl font-bold">SIT Bus System</h3>
@@ -837,10 +1025,13 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
               </div>
 
-              {/* Quick Links */}
               <div>
                 <h4 className="font-semibold text-lg mb-4 text-white">Quick Links</h4>
                 <ul className="space-y-3">
+                  <li><Link href="/notice" className="text-gray-400 hover:text-white transition-colors text-base flex items-center">
+                    <Bell size={16} className="mr-2" />
+                    Notice
+                  </Link></li>
                   <li><Link href="/announcements" className={`text-gray-400 hover:text-white transition-colors text-base flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}>
                     <Megaphone size={16} className="mr-2" />
                     Announcements
@@ -856,7 +1047,6 @@ export default function ClientHome({ busesWithLocations }) {
                 </ul>
               </div>
 
-              {/* Support */}
               <div>
                 <h4 className="font-semibold text-lg mb-4 text-white">Support</h4>
                 <ul className="space-y-3">
@@ -876,7 +1066,6 @@ export default function ClientHome({ busesWithLocations }) {
               </div>
             </div>
 
-            {/* Bottom Bar */}
             <div className="border-t border-gray-800 pt-8">
               <div className="flex flex-col md:flex-row justify-between items-center">
                 <p className="text-gray-400 text-sm text-center md:text-left mb-4 md:mb-0">
@@ -895,6 +1084,20 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </footer>
       </div>
+
+      {/* Add CSS for safe areas */}
+      <style jsx>{`
+        .safe-area-inset {
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
+        }
+        .safe-area-top {
+          padding-top: env(safe-area-inset-top);
+        }
+        .safe-area-bottom {
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Navigation, AlertTriangle, Megaphone, Bell, Users, Settings, Send, X, Plus, FileText, RefreshCw, Eye, Menu, ChevronDown, ChevronUp, Check, User, MessageCircle } from 'lucide-react';
+import { MapPin, Navigation, AlertTriangle, Megaphone, Bell, Users, Settings, Send, X, Plus, FileText, RefreshCw, Eye, Menu, ChevronDown, ChevronUp, Check, User, MessageCircle, Trash2, Database, Filter, Calendar, Clock } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
@@ -31,19 +31,31 @@ export default function AdminPage() {
     title: '',
     message: ''
   });
-  const [newNotice, setNewNotice] = useState({
-    title: '',
-    description: '',
-    pdf_url: '',
-    selectedStudents: []
-  });
+ const [newNotice, setNewNotice] = useState({
+  title: '',
+  description: '',
+  pdf_url: '',
+  selectedStudents: [] // This will store selected student IDs
+});
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
   const [showNoticeForm, setShowNoticeForm] = useState(false);
   const [mediaModal, setMediaModal] = useState({ open: false, url: '', type: '' });
   const [selectedBus, setSelectedBus] = useState(null);
   const [expandedComplaint, setExpandedComplaint] = useState(null);
 
-  // Real-time bus location tracking - SAME LOGIC AS STUDENT PAGE
+  // Developer Settings States
+  const [showDeveloperSettings, setShowDeveloperSettings] = useState(false);
+  const [busLocationData, setBusLocationData] = useState([]);
+  const [deleteFilter, setDeleteFilter] = useState({
+    bus_id: '',
+    start_date: '',
+    end_date: '',
+    older_than_days: ''
+  });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState({ success: null, message: '' });
+
+  // Real-time bus location tracking
   useEffect(() => {
     fetchAllData();
     
@@ -81,7 +93,7 @@ export default function AdminPage() {
       )
       .subscribe();
 
-    // Set interval to refresh bus locations every 5 seconds - SAME AS STUDENT PAGE
+    // Set interval to refresh bus locations every 5 seconds
     const intervalId = setInterval(() => {
       fetchBusLocations();
     }, 5000);
@@ -113,7 +125,7 @@ export default function AdminPage() {
     }
   };
 
-  // CORRECTED: Fetch bus locations with same logic as student page
+  // Fetch bus locations
   const fetchBusLocations = async () => {
     try {
       console.log('Fetching bus locations...');
@@ -125,7 +137,7 @@ export default function AdminPage() {
 
       if (busesError) throw busesError;
 
-      // Then get latest locations for each bus - SAME LOGIC AS STUDENT PAGE
+      // Then get latest locations for each bus
       const busLocationsWithData = await Promise.all(
         allBuses.map(async (bus) => {
           const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
@@ -139,7 +151,7 @@ export default function AdminPage() {
             .limit(1)
             .maybeSingle();
 
-          // Check if location data is recent (within 10 seconds) - SAME AS STUDENT PAGE
+          // Check if location data is recent (within 10 seconds)
           const isLocationRecent = location && (new Date() - new Date(location.updated_at)) < 10000;
 
           return {
@@ -158,8 +170,8 @@ export default function AdminPage() {
             speed: location?.speed || 0,
             current_location: location?.current_location || 'Not Available',
             last_updated: location?.updated_at || null,
-            is_active: isLocationRecent, // SAME LIVE STATUS LOGIC
-            is_live: isLocationRecent // For consistency with student page
+            is_active: isLocationRecent,
+            is_live: isLocationRecent
           };
         })
       );
@@ -169,6 +181,176 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error fetching bus locations:', error);
       setBusLocations([]);
+    }
+  };
+
+  // Fetch all bus location data for developer settings
+  const fetchBusLocationData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bus_locations')
+        .select(`
+          *,
+          buses (
+            bus_number,
+            route_name
+          )
+        `)
+        .order('updated_at', { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+
+      const formattedData = data?.map(record => ({
+        id: record.id,
+        bus_id: record.bus_id,
+        bus_number: record.buses?.bus_number || 'N/A',
+        route_name: record.buses?.route_name || 'No Route',
+        latitude: record.latitude,
+        longitude: record.longitude,
+        speed: record.speed,
+        current_location: record.current_location,
+        updated_at: record.updated_at,
+        created_at: record.created_at
+      })) || [];
+
+      setBusLocationData(formattedData);
+    } catch (error) {
+      console.error('Error fetching bus location data:', error);
+      setBusLocationData([]);
+    }
+  };
+
+  // Delete bus locations with filters
+  const deleteBusLocations = async () => {
+    setDeleteLoading(true);
+    setDeleteResult({ success: null, message: '' });
+
+    try {
+      let query = supabase.from('bus_locations').delete();
+
+      // Apply filters
+      if (deleteFilter.bus_id) {
+        query = query.eq('bus_id', deleteFilter.bus_id);
+      }
+
+      if (deleteFilter.start_date) {
+        query = query.gte('updated_at', deleteFilter.start_date);
+      }
+
+      if (deleteFilter.end_date) {
+        const endDate = new Date(deleteFilter.end_date);
+        endDate.setHours(23, 59, 59, 999);
+        query = query.lte('updated_at', endDate.toISOString());
+      }
+
+      if (deleteFilter.older_than_days) {
+        const olderThanDate = new Date();
+        olderThanDate.setDate(olderThanDate.getDate() - parseInt(deleteFilter.older_than_days));
+        query = query.lt('updated_at', olderThanDate.toISOString());
+      }
+
+      const { error, count } = await query;
+
+      if (error) throw error;
+
+      setDeleteResult({
+        success: true,
+        message: `Successfully deleted ${count || 'all matching'} bus location records.`
+      });
+
+      // Refresh data
+      fetchBusLocationData();
+      fetchBusLocations();
+
+      // Reset filters
+      setDeleteFilter({
+        bus_id: '',
+        start_date: '',
+        end_date: '',
+        older_than_days: ''
+      });
+
+    } catch (error) {
+      console.error('Error deleting bus locations:', error);
+      setDeleteResult({
+        success: false,
+        message: `Error deleting records: ${error.message}`
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Add function to toggle student selection
+const toggleStudentSelection = (studentId) => {
+  setNewNotice(prev => {
+    const isSelected = prev.selectedStudents.includes(studentId);
+    if (isSelected) {
+      return {
+        ...prev,
+        selectedStudents: prev.selectedStudents.filter(id => id !== studentId)
+      };
+    } else {
+      return {
+        ...prev,
+        selectedStudents: [...prev.selectedStudents, studentId]
+      };
+    }
+  });
+};
+
+// Add function to select all students
+const selectAllStudents = () => {
+  const allStudentIds = students.map(student => student.student_id);
+  setNewNotice(prev => ({
+    ...prev,
+    selectedStudents: allStudentIds
+  }));
+};
+
+// Add function to clear all selections
+const clearAllSelections = () => {
+  setNewNotice(prev => ({
+    ...prev,
+    selectedStudents: []
+  }));
+};
+
+  // Delete all bus locations (with confirmation)
+  const deleteAllBusLocations = async () => {
+    if (!confirm('⚠️ DANGER: This will delete ALL bus location records. This action cannot be undone. Are you sure?')) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteResult({ success: null, message: '' });
+
+    try {
+      const { error, count } = await supabase
+        .from('bus_locations')
+        .delete()
+        .neq('id', 0);
+
+      if (error) throw error;
+
+      setDeleteResult({
+        success: true,
+        message: `Successfully deleted all bus location records.`
+      });
+
+      // Refresh data
+      fetchBusLocationData();
+      fetchBusLocations();
+
+    } catch (error) {
+      console.error('Error deleting all bus locations:', error);
+      setDeleteResult({
+        success: false,
+        message: `Error deleting all records: ${error.message}`
+      });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -250,20 +432,39 @@ export default function AdminPage() {
   };
 
   // Fetch notices
-  const fetchNotices = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('notices')
-        .select('*')
-        .order('created_at', { ascending: false });
+  // Fetch notices with student targeting information
+const fetchNotices = async () => {
+  try {
+    // First, fetch all notices
+    const { data: noticesData, error: noticesError } = await supabase
+      .from('notices')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setNotices(data || []);
-    } catch (error) {
-      console.error('Error fetching notices:', error);
-      setNotices([]);
-    }
-  };
+    if (noticesError) throw noticesError;
+
+    // For each notice, fetch the targeted students count
+    const noticesWithTargeting = await Promise.all(
+      (noticesData || []).map(async (notice) => {
+        const { data: noticeStudents, error } = await supabase
+          .from('notice_students')
+          .select('student_id')
+          .eq('notice_id', notice.id);
+
+        return {
+          ...notice,
+          targeted_students_count: noticeStudents?.length || 0,
+          has_targeted_students: (noticeStudents?.length || 0) > 0
+        };
+      })
+    );
+
+    setNotices(noticesWithTargeting);
+  } catch (error) {
+    console.error('Error fetching notices:', error);
+    setNotices([]);
+  }
+};
 
   // Fetch buses
   const fetchBuses = async () => {
@@ -367,50 +568,50 @@ export default function AdminPage() {
   };
 
   // Create new notice
-  const handleCreateNotice = async (e) => {
-    e.preventDefault();
-    try {
-      const { data, error } = await supabase
-        .from('notices')
-        .insert([
-          {
-            title: newNotice.title,
-            description: newNotice.description,
-            pdf_url: newNotice.pdf_url || null
-          }
-        ])
-        .select();
+  // Create new notice
+// Create new notice with student targeting
+const handleCreateNotice = async (e) => {
+  e.preventDefault();
+  try {
+    // First, create the notice
+    const { data: noticeData, error: noticeError } = await supabase
+      .from('notices')
+      .insert([
+        {
+          title: newNotice.title,
+          description: newNotice.description,
+          pdf_url: newNotice.pdf_url || null,
+        }
+      ])
+      .select();
 
-      if (error) throw error;
+    if (noticeError) throw noticeError;
 
-      alert('Notice created successfully!');
-      setNewNotice({ title: '', description: '', pdf_url: '', selectedStudents: [] });
-      setShowNoticeForm(false);
-      fetchNotices();
-    } catch (error) {
-      console.error('Error creating notice:', error);
-      alert('Error creating notice: ' + error.message);
+    const noticeId = noticeData[0].id;
+
+    // If specific students are selected, create entries in notice_students table
+    if (newNotice.selectedStudents.length > 0) {
+      const noticeStudentsData = newNotice.selectedStudents.map(studentId => ({
+        notice_id: noticeId,
+        student_id: studentId
+      }));
+
+      const { error: noticeStudentsError } = await supabase
+        .from('notice_students')
+        .insert(noticeStudentsData);
+
+      if (noticeStudentsError) throw noticeStudentsError;
     }
-  };
 
-  // Update complaint status
-  const updateComplaintStatus = async (complaintId, status) => {
-    try {
-      const { error } = await supabase
-        .from('complaints')
-        .update({ status })
-        .eq('id', complaintId);
-
-      if (error) throw error;
-
-      alert('Complaint status updated!');
-      fetchComplaints();
-    } catch (error) {
-      console.error('Error updating complaint status:', error);
-      alert('Error updating complaint status: ' + error.message);
-    }
-  };
-
+    alert('Notice created successfully!');
+    setNewNotice({ title: '', description: '', pdf_url: '', selectedStudents: [] });
+    setShowNoticeForm(false);
+    fetchNotices();
+  } catch (error) {
+    console.error('Error creating notice:', error);
+    alert('Error creating notice: ' + error.message);
+  }
+};
   // Update student fees status
   const updateFeesStatus = async (studentId, newStatus) => {
     try {
@@ -470,7 +671,6 @@ export default function AdminPage() {
   // Get Google Maps embed URL for iframe
   const getGoogleMapsUrl = (coordinates) => {
     if (!coordinates || !coordinates.lat || !coordinates.lng) {
-      // Default to SIT location if no coordinates
       return "https://www.google.com/maps/embed/v1/view?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&center=17.3616,78.4747&zoom=15&maptype=roadmap";
     }
     
@@ -618,6 +818,20 @@ export default function AdminPage() {
                 <span className="hidden sm:inline">Refresh</span>
               </button>
               
+              {/* Developer Settings Button */}
+              <button 
+                onClick={() => {
+                  setShowDeveloperSettings(!showDeveloperSettings);
+                  if (!showDeveloperSettings) {
+                    fetchBusLocationData();
+                  }
+                }}
+                className="bg-purple-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors shadow-sm flex items-center text-sm"
+              >
+                <Database size={16} className="mr-2" />
+                <span className="hidden sm:inline">Developer</span>
+              </button>
+              
               {/* Mobile Menu Button */}
               <button 
                 onClick={() => setShowMobileMenu(!showMobileMenu)}
@@ -631,6 +845,167 @@ export default function AdminPage() {
       </header>
 
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {/* Developer Settings Panel */}
+        {showDeveloperSettings && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-yellow-800 flex items-center">
+                <Database size={20} className="mr-2" />
+                Developer Settings - Bus Locations Management
+              </h2>
+              <button
+                onClick={() => setShowDeveloperSettings(false)}
+                className="text-yellow-600 hover:text-yellow-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Delete Filters */}
+            <div className="bg-white rounded-lg p-4 mb-4 border border-yellow-200">
+              <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
+                <Filter size={16} className="mr-2" />
+                Delete Bus Locations with Filters
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bus ID</label>
+                  <input
+                    type="text"
+                    value={deleteFilter.bus_id}
+                    onChange={(e) => setDeleteFilter(prev => ({ ...prev, bus_id: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    placeholder="Filter by bus ID"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={deleteFilter.start_date}
+                    onChange={(e) => setDeleteFilter(prev => ({ ...prev, start_date: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={deleteFilter.end_date}
+                    onChange={(e) => setDeleteFilter(prev => ({ ...prev, end_date: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Older Than (Days)</label>
+                  <input
+                    type="number"
+                    value={deleteFilter.older_than_days}
+                    onChange={(e) => setDeleteFilter(prev => ({ ...prev, older_than_days: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    placeholder="e.g., 30"
+                    min="1"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={deleteBusLocations}
+                  disabled={deleteLoading}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center text-sm disabled:opacity-50"
+                >
+                  <Trash2 size={16} className="mr-2" />
+                  {deleteLoading ? 'Deleting...' : 'Delete Filtered Records'}
+                </button>
+                
+                <button
+                  onClick={deleteAllBusLocations}
+                  disabled={deleteLoading}
+                  className="bg-red-800 text-white px-4 py-2 rounded-lg hover:bg-red-900 transition-colors flex items-center text-sm disabled:opacity-50"
+                >
+                  <Trash2 size={16} className="mr-2" />
+                  {deleteLoading ? 'Deleting...' : 'Delete ALL Records'}
+                </button>
+                
+                <button
+                  onClick={fetchBusLocationData}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm"
+                >
+                  <RefreshCw size={16} className="mr-2" />
+                  Refresh Data
+                </button>
+              </div>
+
+              {deleteResult.message && (
+                <div className={`mt-3 p-3 rounded-lg text-sm ${
+                  deleteResult.success ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'
+                }`}>
+                  {deleteResult.message}
+                </div>
+              )}
+            </div>
+
+            {/* Data Preview */}
+            <div className="bg-white rounded-lg p-4 border border-yellow-200">
+              <h3 className="font-semibold text-gray-900 mb-3">
+                Bus Location Data ({busLocationData.length} records)
+              </h3>
+              
+              <div className="overflow-x-auto max-h-96">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Bus</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Location</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Speed</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {busLocationData.slice(0, 50).map((record) => (
+                      <tr key={record.id}>
+                        <td className="px-3 py-2 whitespace-nowrap text-gray-900 font-mono">{record.id}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <div className="text-gray-900 font-medium">Bus {record.bus_number}</div>
+                          <div className="text-gray-500 text-xs">{record.route_name}</div>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <div className="text-gray-900">{record.latitude?.toFixed(6)}, {record.longitude?.toFixed(6)}</div>
+                          <div className="text-gray-500 text-xs">{record.current_location || 'N/A'}</div>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-gray-900">
+                          {record.speed ? `${record.speed} km/h` : 'N/A'}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-gray-500 text-xs">
+                          {formatDate(record.updated_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {busLocationData.length > 50 && (
+                <div className="mt-2 text-center text-gray-500 text-xs">
+                  Showing first 50 of {busLocationData.length} records
+                </div>
+              )}
+              
+              {busLocationData.length === 0 && (
+                <div className="text-center py-4 text-gray-500">
+                  No bus location data found
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Mobile Navigation Tabs */}
         {showMobileMenu && (
           <div className="lg:hidden mb-6 bg-white rounded-lg shadow border border-gray-200">
@@ -832,7 +1207,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Bus Locations Tab - FIXED WITH PROPER COLORS */}
+            {/* Bus Locations Tab */}
             {activeTab === 'buses' && (
               <div className="space-y-6">
                 {/* Real Google Maps View */}
@@ -869,7 +1244,7 @@ export default function AdminPage() {
                       ></iframe>
                     </div>
                     
-                    {/* Bus Information Panel - FIXED COLORS */}
+                    {/* Bus Information Panel */}
                     {selectedBus && (
                       <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                         <h3 className="font-semibold text-gray-900 text-lg">Bus {selectedBus.bus_number}</h3>
@@ -917,7 +1292,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Bus List - FIXED COLORS */}
+                {/* Bus List */}
                 <div className="bg-white rounded-lg shadow">
                   <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">All Buses ({totalBuses})</h2>
@@ -1117,7 +1492,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Announcements Tab - FIXED INPUT COLORS */}
+            {/* Announcements Tab */}
             {activeTab === 'announcements' && (
               <div className="space-y-6">
                 <div className="bg-white rounded-lg shadow">
@@ -1151,7 +1526,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Announcement Form Modal - FIXED INPUT COLORS */}
+                {/* Announcement Form Modal */}
                 {showAnnouncementForm && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
@@ -1206,7 +1581,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Notices Tab - FIXED INPUT COLORS */}
+            {/* Notices Tab */}
             {activeTab === 'notices' && (
               <div className="space-y-6">
                 <div className="bg-white rounded-lg shadow">
@@ -1221,26 +1596,40 @@ export default function AdminPage() {
                     </button>
                   </div>
                   <div className="p-4 sm:p-6">
-                    <div className="space-y-4">
-                      {notices.map((notice) => (
-                        <div key={notice.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
-                          <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
-                          {notice.pdf_url && (
-                            <a
-                              href={notice.pdf_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm"
-                            >
-                              <FileText size={14} className="mr-1" />
-                              View PDF
-                            </a>
-                          )}
-                          <p className="text-xs text-gray-500 mt-2">Posted on {formatDate(notice.created_at)}</p>
-                        </div>
-                      ))}
-                    </div>
+                 <div className="space-y-4">
+  {notices.map((notice) => (
+    <div key={notice.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+      <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
+      <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
+      
+      {/* Show targeting information */}
+      <div className="mb-2">
+        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+          notice.has_targeted_students 
+            ? 'bg-purple-100 text-purple-800' 
+            : 'bg-green-100 text-green-800'
+        }`}>
+          {notice.has_targeted_students 
+            ? `Sent to ${notice.targeted_students_count} student(s)` 
+            : 'Broadcast to all students'}
+        </span>
+      </div>
+      
+      {notice.pdf_url && (
+        <a
+          href={notice.pdf_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm"
+        >
+          <FileText size={14} className="mr-1" />
+          View PDF
+        </a>
+      )}
+      <p className="text-xs text-gray-500 mt-2">Posted on {formatDate(notice.created_at)}</p>
+    </div>
+  ))}
+</div>
                     
                     {notices.length === 0 && (
                       <div className="text-center py-8 sm:py-12">
@@ -1251,68 +1640,151 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Notice Form Modal - FIXED INPUT COLORS */}
-                {showNoticeForm && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Create Notice</h3>
-                        <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
-                          <X size={20} />
-                        </button>
-                      </div>
-                      <form onSubmit={handleCreateNotice} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                {/* Notice Form Modal */}
+                {/* Notice Form Modal */}
+{showNoticeForm && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg max-w-4xl w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Create Notice</h3>
+        <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
+          <X size={20} />
+        </button>
+      </div>
+      <form onSubmit={handleCreateNotice} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+          <input
+            type="text"
+            required
+            value={newNotice.title}
+            onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+            placeholder="Enter notice title"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+          <textarea
+            required
+            rows={4}
+            value={newNotice.description}
+            onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+            placeholder="Enter notice description"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (Optional)</label>
+          <input
+            type="url"
+            value={newNotice.pdf_url}
+            onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+            placeholder="https://example.com/notice.pdf"
+          />
+        </div>
+
+        {/* Student Selection Section */}
+        <div className="border border-gray-200 rounded-lg p-4">
+          <div className="flex justify-between items-center mb-3">
+            <label className="block text-sm font-medium text-gray-700">
+              Send to Specific Students (Optional)
+            </label>
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={selectAllStudents}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={clearAllSelections}
+                className="text-red-600 hover:text-red-800 text-sm font-medium"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            {newNotice.selectedStudents.length > 0 
+              ? `Selected ${newNotice.selectedStudents.length} student(s)` 
+              : 'If no students selected, notice will be sent to all students (broadcast)'}
+          </p>
+          
+          <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Select</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">USN</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Branch</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {students.map((student) => {
+                  const isSelected = newNotice.selectedStudents.includes(student.student_id);
+                  return (
+                    <tr 
+                      key={student.student_id} 
+                      className={`cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                      onClick={() => toggleStudentSelection(student.student_id)}
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="flex items-center">
                           <input
-                            type="text"
-                            required
-                            value={newNotice.title}
-                            onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-                            placeholder="Enter notice title"
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleStudentSelection(student.student_id)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            onClick={(e) => e.stopPropagation()}
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-                          <textarea
-                            required
-                            rows={4}
-                            value={newNotice.description}
-                            onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-                            placeholder="Enter notice description"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (Optional)</label>
-                          <input
-                            type="url"
-                            value={newNotice.pdf_url}
-                            onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-                            placeholder="https://example.com/notice.pdf"
-                          />
-                        </div>
-                        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
-                          <button
-                            type="button"
-                            onClick={() => setShowNoticeForm(false)}
-                            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                          >
-                            Create Notice
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900">
+                        {student.usn}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                        {student.full_name}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                        {student.branch}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {students.length === 0 && (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                No students found
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+          <button
+            type="button"
+            onClick={() => setShowNoticeForm(false)}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+          >
+            Create Notice
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
               </div>
             )}
 
@@ -1380,14 +1852,14 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Community Tab - FIXED INPUT COLORS */}
+            {/* Community Tab */}
             {activeTab === 'community' && (
               <div className="bg-white rounded-lg shadow">
                 <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                   <h2 className="text-lg font-semibold text-gray-900">Community Messages ({communityMessages.length})</h2>
                 </div>
                 <div className="p-4 sm:p-6">
-                  {/* Message Input - FIXED COLORS */}
+                  {/* Message Input */}
                   <form onSubmit={sendCommunityMessage} className="mb-6">
                     <div className="flex space-x-2">
                       <input

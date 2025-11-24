@@ -832,7 +832,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Bus Locations Tab - FIXED WITH SAME LOGIC AS STUDENT PAGE */}
+            {/* Bus Locations Tab - FIXED WITH PROPER COLORS */}
             {activeTab === 'buses' && (
               <div className="space-y-6">
                 {/* Real Google Maps View */}
@@ -843,11 +843,11 @@ export default function AdminPage() {
                       <div className="flex items-center space-x-2 text-sm text-gray-600">
                         <div className="flex items-center">
                           <div className="w-3 h-3 bg-green-500 rounded-full mr-1"></div>
-                          <span>Active ({activeBuses})</span>
+                          <span className="text-gray-700">Active ({activeBuses})</span>
                         </div>
                         <div className="flex items-center">
                           <div className="w-3 h-3 bg-gray-400 rounded-full mr-1"></div>
-                          <span>Offline ({totalBuses - activeBuses})</span>
+                          <span className="text-gray-700">Offline ({totalBuses - activeBuses})</span>
                         </div>
                       </div>
                     </div>
@@ -869,45 +869,45 @@ export default function AdminPage() {
                       ></iframe>
                     </div>
                     
-                    {/* Bus Information Panel */}
+                    {/* Bus Information Panel - FIXED COLORS */}
                     {selectedBus && (
-                      <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                        <h3 className="font-semibold text-gray-900">Bus {selectedBus.bus_number}</h3>
-                        <p className="text-sm text-gray-600">{selectedBus.route_name}</p>
-                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <span className="text-gray-600">Driver:</span>
-                            <span className="ml-2 font-medium">{selectedBus.driver_name}</span>
+                      <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h3 className="font-semibold text-gray-900 text-lg">Bus {selectedBus.bus_number}</h3>
+                        <p className="text-gray-600 text-sm mb-3">{selectedBus.route_name}</p>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 font-medium">Driver:</span>
+                            <span className="text-gray-900 font-semibold">{selectedBus.driver_name}</span>
                           </div>
-                          <div>
-                            <span className="text-gray-600">Status:</span>
-                            <span className={`ml-2 font-medium ${selectedBus.is_active ? 'text-green-600' : 'text-gray-600'}`}>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 font-medium">Status:</span>
+                            <span className={`font-semibold ${selectedBus.is_active ? 'text-green-600' : 'text-gray-600'}`}>
                               {selectedBus.is_active ? 'Active' : 'Offline'}
                             </span>
                           </div>
-                          <div>
-                            <span className="text-gray-600">Location:</span>
-                            <span className="ml-2 font-medium">{selectedBus.current_location}</span>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 font-medium">Location:</span>
+                            <span className="text-gray-900 font-semibold text-right">{selectedBus.current_location}</span>
                           </div>
                           {selectedBus.coordinates && (
-                            <div>
-                              <span className="text-gray-600">Coordinates:</span>
-                              <span className="ml-2 font-mono text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 font-medium">Coordinates:</span>
+                              <span className="text-gray-900 font-mono text-xs">
                                 {selectedBus.coordinates.lat.toFixed(6)}, {selectedBus.coordinates.lng.toFixed(6)}
                               </span>
                             </div>
                           )}
                           {selectedBus.speed > 0 && (
-                            <div>
-                              <span className="text-gray-600">Speed:</span>
-                              <span className="ml-2 font-medium">{selectedBus.speed} km/h</span>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600 font-medium">Speed:</span>
+                              <span className="text-gray-900 font-semibold">{selectedBus.speed} km/h</span>
                             </div>
                           )}
                         </div>
                         {selectedBus.coordinates && (
                           <button
                             onClick={() => openInGoogleMaps(selectedBus.coordinates.lat, selectedBus.coordinates.lng)}
-                            className="mt-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
+                            className="mt-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
                           >
                             Open in Google Maps
                           </button>
@@ -917,7 +917,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Bus List */}
+                {/* Bus List - FIXED COLORS */}
                 <div className="bg-white rounded-lg shadow">
                   <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">All Buses ({totalBuses})</h2>
@@ -936,11 +936,11 @@ export default function AdminPage() {
                         >
                           <div className="flex justify-between items-start mb-3">
                             <div>
-                              <h3 className="font-semibold text-gray-900">Bus {bus.bus_number}</h3>
-                              <p className="text-sm text-gray-600">{bus.route_name}</p>
+                              <h3 className="font-semibold text-gray-900 text-lg">Bus {bus.bus_number}</h3>
+                              <p className="text-gray-600 text-sm">{bus.route_name}</p>
                             </div>
-                            <div className={`px-2 py-1 rounded-full text-xs ${
-                              bus.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              bus.is_active ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-800 border border-gray-200'
                             }`}>
                               {bus.is_active ? 'Live' : 'Offline'}
                             </div>
@@ -949,18 +949,18 @@ export default function AdminPage() {
                           <div className="space-y-2 text-sm">
                             <div className="flex justify-between">
                               <span className="text-gray-600">Driver:</span>
-                              <span className="font-medium text-gray-900">{bus.driver_name}</span>
+                              <span className="text-gray-900 font-medium">{bus.driver_name}</span>
                             </div>
                             {bus.is_active ? (
                               <>
                                 <div className="flex justify-between">
                                   <span className="text-gray-600">Location:</span>
-                                  <span className="font-medium text-gray-900 text-right">{bus.current_location}</span>
+                                  <span className="text-gray-900 font-medium text-right">{bus.current_location}</span>
                                 </div>
                                 {bus.speed > 0 && (
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">Speed:</span>
-                                    <span className="font-medium text-gray-900">{bus.speed} km/h</span>
+                                    <span className="text-gray-900 font-medium">{bus.speed} km/h</span>
                                   </div>
                                 )}
                               </>
@@ -970,7 +970,7 @@ export default function AdminPage() {
                               </div>
                             )}
                             {bus.last_updated && (
-                              <div className="flex justify-between text-xs text-gray-500 pt-2 border-t">
+                              <div className="flex justify-between text-xs text-gray-500 pt-2 border-t border-gray-200">
                                 <span>Last updated:</span>
                                 <span>{formatDate(bus.last_updated)}</span>
                               </div>
@@ -991,7 +991,6 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Other tabs remain the same */}
             {/* Complaints Tab */}
             {activeTab === 'complaints' && (
               <div className="bg-white rounded-lg shadow">
@@ -1118,7 +1117,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Announcements Tab */}
+            {/* Announcements Tab - FIXED INPUT COLORS */}
             {activeTab === 'announcements' && (
               <div className="space-y-6">
                 <div className="bg-white rounded-lg shadow">
@@ -1135,7 +1134,7 @@ export default function AdminPage() {
                   <div className="p-4 sm:p-6">
                     <div className="space-y-4">
                       {announcements.map((announcement) => (
-                        <div key={announcement.id} className="border border-gray-200 rounded-lg p-4">
+                        <div key={announcement.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                           <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{announcement.title}</h3>
                           <p className="text-gray-600 text-sm sm:text-base mb-2">{announcement.message}</p>
                           <p className="text-xs text-gray-500">Posted on {formatDate(announcement.created_at)}</p>
@@ -1152,12 +1151,12 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Announcement Form Modal */}
+                {/* Announcement Form Modal - FIXED INPUT COLORS */}
                 {showAnnouncementForm && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold">Create Announcement</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">Create Announcement</h3>
                         <button onClick={() => setShowAnnouncementForm(false)} className="text-gray-400 hover:text-gray-600">
                           <X size={20} />
                         </button>
@@ -1170,7 +1169,7 @@ export default function AdminPage() {
                             required
                             value={newAnnouncement.title}
                             onChange={(e) => setNewAnnouncement(prev => ({ ...prev, title: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                             placeholder="Enter announcement title"
                           />
                         </div>
@@ -1181,7 +1180,7 @@ export default function AdminPage() {
                             rows={4}
                             value={newAnnouncement.message}
                             onChange={(e) => setNewAnnouncement(prev => ({ ...prev, message: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                             placeholder="Enter announcement message"
                           />
                         </div>
@@ -1207,7 +1206,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Notices Tab */}
+            {/* Notices Tab - FIXED INPUT COLORS */}
             {activeTab === 'notices' && (
               <div className="space-y-6">
                 <div className="bg-white rounded-lg shadow">
@@ -1224,7 +1223,7 @@ export default function AdminPage() {
                   <div className="p-4 sm:p-6">
                     <div className="space-y-4">
                       {notices.map((notice) => (
-                        <div key={notice.id} className="border border-gray-200 rounded-lg p-4">
+                        <div key={notice.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                           <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
                           <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
                           {notice.pdf_url && (
@@ -1252,12 +1251,12 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Notice Form Modal */}
+                {/* Notice Form Modal - FIXED INPUT COLORS */}
                 {showNoticeForm && (
                   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg max-w-md w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-semibold">Create Notice</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">Create Notice</h3>
                         <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
                           <X size={20} />
                         </button>
@@ -1270,7 +1269,7 @@ export default function AdminPage() {
                             required
                             value={newNotice.title}
                             onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                             placeholder="Enter notice title"
                           />
                         </div>
@@ -1281,7 +1280,7 @@ export default function AdminPage() {
                             rows={4}
                             value={newNotice.description}
                             onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                             placeholder="Enter notice description"
                           />
                         </div>
@@ -1291,7 +1290,7 @@ export default function AdminPage() {
                             type="url"
                             value={newNotice.pdf_url}
                             onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                             placeholder="https://example.com/notice.pdf"
                           />
                         </div>
@@ -1381,14 +1380,14 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Community Tab */}
+            {/* Community Tab - FIXED INPUT COLORS */}
             {activeTab === 'community' && (
               <div className="bg-white rounded-lg shadow">
                 <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                   <h2 className="text-lg font-semibold text-gray-900">Community Messages ({communityMessages.length})</h2>
                 </div>
                 <div className="p-4 sm:p-6">
-                  {/* Message Input */}
+                  {/* Message Input - FIXED COLORS */}
                   <form onSubmit={sendCommunityMessage} className="mb-6">
                     <div className="flex space-x-2">
                       <input
@@ -1396,7 +1395,7 @@ export default function AdminPage() {
                         value={newCommunityMessage}
                         onChange={(e) => setNewCommunityMessage(e.target.value)}
                         placeholder="Type your message..."
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
                       />
                       <button
                         type="submit"
@@ -1411,7 +1410,7 @@ export default function AdminPage() {
                   {/* Messages List */}
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {communityMessages.map((message) => (
-                      <div key={message.id} className="border border-gray-200 rounded-lg p-4">
+                      <div key={message.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold text-gray-900 text-sm">{message.username}</span>
@@ -1454,7 +1453,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">
+              <h3 className="text-lg font-semibold text-gray-900">
                 {mediaModal.type === 'image' ? 'Complaint Photo' : 'Complaint Video'}
               </h3>
               <button 

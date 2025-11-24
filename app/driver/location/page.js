@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, Bus, Play, Square, LogOut } from 'lucide-react';
+import { MapPin, Bus, Play, Square, LogOut, Navigation, Gauge, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 export default function DriverLocationPage() {
@@ -12,6 +12,8 @@ export default function DriverLocationPage() {
   const [locationInterval, setLocationInterval] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -69,25 +71,49 @@ export default function DriverLocationPage() {
     });
   };
 
+  const calculateSpeed = (speedMps) => {
+    // Convert m/s to km/h and ensure it's never negative
+    return Math.max(0, (speedMps * 3.6));
+  };
+
   const saveBusLocation = async (busId, location) => {
     try {
+      const speedKmh = calculateSpeed(location.speed);
+      
       const { error } = await supabase
         .from('bus_locations')
-        .insert([
+        .upsert([
           {
             bus_id: busId,
             latitude: location.latitude,
             longitude: location.longitude,
-            speed: location.speed,
+            speed: speedKmh, // Store in km/h
             last_updated: new Date().toISOString()
           }
         ]);
 
       if (error) throw error;
       console.log('Location saved for bus_id:', busId);
+      return true;
     } catch (error) {
       console.error('Error saving location:', error);
       throw error;
+    }
+  };
+
+  const updateLocation = async () => {
+    if (!driver) return;
+
+    setIsUpdating(true);
+    try {
+      const location = await getCurrentLocation();
+      await saveBusLocation(driver.bus_id, location);
+      setCurrentLocation(location);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error('Error updating location:', error);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -98,24 +124,14 @@ export default function DriverLocationPage() {
     }
 
     try {
-      const location = await getCurrentLocation();
-      await saveBusLocation(driver.bus_id, location);
-      setCurrentLocation(location);
+      await updateLocation();
 
       const interval = setInterval(async () => {
-        try {
-          const newLocation = await getCurrentLocation();
-          await saveBusLocation(driver.bus_id, newLocation);
-          setCurrentLocation(newLocation);
-          console.log('Location updated for bus_id:', driver.bus_id);
-        } catch (error) {
-          console.error('Error updating location:', error);
-        }
+        await updateLocation();
       }, 10000);
 
       setLocationInterval(interval);
       setIsSharing(true);
-      alert('Location sharing started! Updating every 10 seconds.');
 
     } catch (error) {
       console.error('Error starting location sharing:', error);
@@ -129,24 +145,36 @@ export default function DriverLocationPage() {
       setLocationInterval(null);
     }
     setIsSharing(false);
-    alert('Location sharing stopped');
   };
 
   const formatSpeed = (speed) => {
     if (!speed) return '0 km/h';
-    return `${(speed * 3.6).toFixed(1)} km/h`;
+    return `${speed.toFixed(1)} km/h`;
   };
 
   const formatCoordinates = (coord) => {
     return coord ? coord.toFixed(6) : '0.000000';
   };
 
+  const getSpeedColor = (speed) => {
+    if (!speed || speed < 20) return 'text-green-600';
+    if (speed < 40) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getSpeedStatus = (speed) => {
+    if (!speed || speed < 5) return 'Stopped';
+    if (speed < 20) return 'Slow';
+    if (speed < 40) return 'Moderate';
+    return 'Fast';
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Checking authentication...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">Checking authentication...</p>
         </div>
       </div>
     );
@@ -159,121 +187,181 @@ export default function DriverLocationPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+      <header className="bg-white/80 backdrop-blur-lg shadow-sm border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
-                <Bus className="text-white" size={24} />
+          <div className="flex items-center justify-between h-20">
+            <div className="flex items-center space-x-4">
+              <div className="bg-gradient-to-r from-blue-500 to-purple-600 w-12 h-12 rounded-xl flex items-center justify-center shadow-lg">
+                <Bus className="text-white" size={28} />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Driver Location Sharing</h1>
-                <p className="text-xs text-gray-500 -mt-1">Welcome, {driver.driver_name}</p>
+                <h1 className="text-2xl font-bold text-gray-900">Live Location Tracker</h1>
+                <p className="text-sm text-gray-600">Welcome back, {driver.driver_name}</p>
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
               {isSharing && (
-                <div className="flex items-center space-x-2 bg-red-100 text-red-800 px-4 py-2 rounded-lg">
-                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                  <span className="font-medium">Sharing Live Location</span>
+                <div className="flex items-center space-x-3 bg-green-100 text-green-800 px-4 py-3 rounded-xl border border-green-200">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="font-semibold">Sharing Live</span>
                 </div>
               )}
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center space-x-2 bg-gray-100 text-gray-700 px-4 py-3 rounded-xl hover:bg-gray-200 transition-all duration-200 shadow-sm"
               >
-                <LogOut size={16} />
-                <span>Logout</span>
+                <LogOut size={18} />
+                <span className="font-medium">Logout</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        {/* Current Bus Information */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Your Bus Information</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">Bus Number</p>
-              <p className="text-lg font-bold text-blue-600">Bus {driver.bus_number}</p>
+      <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        {/* Bus Information Card */}
+        <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl p-8 mb-8 border border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+            <Bus className="text-blue-600 mr-3" size={28} />
+            Bus Information
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-2xl border border-blue-200">
+              <p className="text-sm text-blue-600 font-medium mb-2">Bus Number</p>
+              <p className="text-2xl font-bold text-blue-700">Bus {driver.bus_number}</p>
             </div>
-            <div className="bg-green-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">Driver</p>
-              <p className="text-lg font-bold text-green-600">{driver.driver_name}</p>
+            <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-2xl border border-green-200">
+              <p className="text-sm text-green-600 font-medium mb-2">Driver Name</p>
+              <p className="text-2xl font-bold text-green-700">{driver.driver_name}</p>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">Contact</p>
-              <p className="text-lg font-bold text-purple-600">{driver.driver_number}</p>
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-2xl border border-purple-200">
+              <p className="text-sm text-purple-600 font-medium mb-2">Contact Number</p>
+              <p className="text-2xl font-bold text-purple-700">{driver.driver_number}</p>
             </div>
           </div>
         </div>
 
         {/* Current Location Display */}
         {currentLocation && (
-          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-              <MapPin className="text-green-600 mr-2" size={24} />
-              Current Location (Bus ID: {driver.bus_id})
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Latitude</p>
-                <p className="text-lg font-mono font-bold">{formatCoordinates(currentLocation.latitude)}</p>
+          <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl p-8 mb-8 border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                <Navigation className="text-green-600 mr-3" size={28} />
+                Current Location
+              </h2>
+              <button
+                onClick={updateLocation}
+                disabled={isUpdating}
+                className="flex items-center space-x-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-xl hover:bg-blue-200 transition-all disabled:opacity-50"
+              >
+                <RefreshCw size={18} className={isUpdating ? 'animate-spin' : ''} />
+                <span>{isUpdating ? 'Updating...' : 'Refresh'}</span>
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-600 font-medium mb-2">Latitude</p>
+                <p className="text-xl font-mono font-bold text-gray-800">
+                  {formatCoordinates(currentLocation.latitude)}
+                </p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Longitude</p>
-                <p className="text-lg font-mono font-bold">{formatCoordinates(currentLocation.longitude)}</p>
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-600 font-medium mb-2">Longitude</p>
+                <p className="text-xl font-mono font-bold text-gray-800">
+                  {formatCoordinates(currentLocation.longitude)}
+                </p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm text-gray-600">Speed</p>
-                <p className="text-lg font-bold text-blue-600">{formatSpeed(currentLocation.speed)}</p>
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-6 rounded-2xl border border-orange-200">
+                <p className="text-sm text-orange-600 font-medium mb-2 flex items-center">
+                  <Gauge size={16} className="mr-1" />
+                  Current Speed
+                </p>
+                <p className={`text-2xl font-bold ${getSpeedColor(calculateSpeed(currentLocation.speed))}`}>
+                  {formatSpeed(calculateSpeed(currentLocation.speed))}
+                </p>
+                <p className="text-sm text-orange-600 mt-1">
+                  Status: {getSpeedStatus(calculateSpeed(currentLocation.speed))}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-2xl border border-green-200">
+                <p className="text-sm text-green-600 font-medium mb-2">Last Updated</p>
+                <p className="text-lg font-bold text-green-700">
+                  {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Never'}
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  {lastUpdate ? lastUpdate.toLocaleDateString() : 'No updates yet'}
+                </p>
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-3 text-center">
-              Last updated: {new Date().toLocaleTimeString()}
-            </p>
           </div>
         )}
 
         {/* Location Sharing Controls */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Location Sharing Controls</h2>
+        <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-gray-100">
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Location Sharing</h2>
+          <p className="text-gray-600 mb-8">Start or stop sharing your bus location with passengers</p>
           
-          {!isSharing ? (
-            <button
-              onClick={startLocationSharing}
-              className="w-full bg-gradient-to-r from-red-500 to-orange-600 text-white py-4 rounded-xl font-semibold hover:from-red-600 hover:to-orange-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center"
-            >
-              <Play size={20} className="mr-2" />
-              Start Location Sharing
-            </button>
-          ) : (
-            <button
-              onClick={stopLocationSharing}
-              className="w-full bg-gradient-to-r from-gray-500 to-gray-700 text-white py-4 rounded-xl font-semibold hover:from-gray-600 hover:to-gray-800 transition-all shadow-md hover:shadow-lg flex items-center justify-center"
-            >
-              <Square size={20} className="mr-2" />
-              Stop Location Sharing
-            </button>
-          )}
+          <div className="flex flex-col space-y-6">
+            {!isSharing ? (
+              <button
+                onClick={startLocationSharing}
+                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-6 rounded-2xl font-bold text-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center"
+              >
+                <Play size={24} className="mr-3" fill="white" />
+                Start Location Sharing
+              </button>
+            ) : (
+              <button
+                onClick={stopLocationSharing}
+                className="w-full bg-gradient-to-r from-red-500 to-orange-600 text-white py-6 rounded-2xl font-bold text-lg hover:from-red-600 hover:to-orange-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center"
+              >
+                <Square size={24} className="mr-3" />
+                Stop Location Sharing
+              </button>
+            )}
 
-          {isSharing && (
-            <div className="mt-4 text-center">
-              <div className="flex items-center justify-center text-green-600 mb-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse mr-2"></div>
-                <span className="font-medium">Live Location Sharing Active</span>
+            {isSharing && (
+              <div className="text-center p-6 bg-green-50 rounded-2xl border border-green-200">
+                <div className="flex items-center justify-center space-x-3 text-green-700 mb-3">
+                  <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="font-semibold text-lg">Live Location Sharing Active</span>
+                </div>
+                <p className="text-green-600 mb-2">
+                  Your location is automatically updated every 10 seconds
+                </p>
+                <p className="text-sm text-green-500">
+                  Speed is automatically calculated and stored in km/h
+                </p>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="font-medium">Update Frequency</p>
+                    <p className="text-green-600">Every 10 seconds</p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="font-medium">Speed Unit</p>
+                    <p className="text-green-600">Kilometers per hour</p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded-lg">
+                    <p className="font-medium">Bus ID</p>
+                    <p className="text-green-600">{driver.bus_id}</p>
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-gray-600">
-                Your location is being updated every 10 seconds
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Location data is being stored in bus_locations table with bus_id: {driver.bus_id}
-              </p>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
+
+        {/* Quick Tips */}
+        <div className="mt-8 bg-blue-50/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-200">
+          <h3 className="text-lg font-bold text-blue-800 mb-3">💡 Quick Tips</h3>
+          <ul className="text-blue-700 space-y-2 text-sm">
+            <li>• Make sure location services are enabled on your device</li>
+            <li>• Keep the app open while sharing location for best accuracy</li>
+            <li>• Speed is automatically calculated and stored in km/h</li>
+            <li>• Location updates automatically every 10 seconds when active</li>
+          </ul>
         </div>
       </div>
     </div>

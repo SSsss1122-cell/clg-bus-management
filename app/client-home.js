@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { MapPin, Navigation, Menu, Bell, Megaphone, Info, User, BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, X, ChevronLeft } from 'lucide-react';
+import { 
+  MapPin, Navigation, Menu, Bell, Megaphone, Info, User, 
+  BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, 
+  X, ChevronLeft, MessageSquare 
+} from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
@@ -12,7 +16,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Bus Card Component (unchanged)
+// Bus Card Component
 function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
   const busImages = ["/images/bus1.png", "/images/bus2.png"];
   const imageSrc = busImages[index % busImages.length];
@@ -361,25 +365,6 @@ export default function ClientHome({ busesWithLocations }) {
     alert('Logged out successfully');
   };
 
-  // Mobile navigation handler
-  const handleMobileNavigation = (path) => {
-    setShowMobileMenu(false);
-    router.push(path);
-  };
-
-  // Back navigation handler for mobile
-  const handleBackNavigation = () => {
-    if (showMapModal) {
-      setShowMapModal(false);
-    } else if (showLoginModal) {
-      setShowLoginModal(false);
-    } else if (showMobileMenu) {
-      setShowMobileMenu(false);
-    } else {
-      router.back();
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col safe-area-inset">
       {/* Enhanced Fixed Navigation Header */}
@@ -454,7 +439,7 @@ export default function ClientHome({ busesWithLocations }) {
                 <button 
                   onClick={() => setShowLoginModal(true)}
                   className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 lg:px-6 py-2 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md text-sm lg:text-base"
-                  >
+                >
                   Login
                 </button>
               )}
@@ -495,58 +480,61 @@ export default function ClientHome({ busesWithLocations }) {
 
             <nav className="flex flex-col p-4 space-y-1">
               {/* Home Link */}
-              <button 
-                onClick={() => handleMobileNavigation('/')}
+              <Link 
+                href="/"
+                onClick={() => setShowMobileMenu(false)}
                 className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 border-l-4 border-blue-600 pl-4 bg-blue-50 rounded-r-lg text-left flex items-center"
               >
                 <Navigation size={18} className="mr-3" />
                 Home
-              </button>
+              </Link>
 
               {/* Notice Link */}
-              <button 
-                onClick={() => handleMobileNavigation('/notice')}
+              <Link 
+                href="/notice"
+                onClick={() => setShowMobileMenu(false)}
                 className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
               >
                 <Bell size={18} className="mr-3" />
                 Notice
-              </button>
+              </Link>
 
               {/* Conditional Links */}
-              <button 
-                onClick={() => handleMobileNavigation('/announcements')}
-                disabled={!isLoggedIn}
+              <Link 
+                href="/announcements"
+                onClick={() => setShowMobileMenu(false)}
                 className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
               >
                 <Megaphone size={18} className="mr-3" />
                 Announcements
-              </button>
+              </Link>
 
-              <button 
-                onClick={() => handleMobileNavigation('/community')}
-                disabled={!isLoggedIn}
+              <Link 
+                href="/community"
+                onClick={() => setShowMobileMenu(false)}
                 className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
               >
                 <Users size={18} className="mr-3" />
                 Community
-              </button>
+              </Link>
 
-              <button 
-                onClick={() => handleMobileNavigation('/complaint')}
-                disabled={!isLoggedIn}
+              <Link 
+                href="/complaint"
+                onClick={() => setShowMobileMenu(false)}
                 className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
               >
                 <AlertTriangle size={18} className="mr-3" />
                 Complaint
-              </button>
+              </Link>
 
-              <button 
-                onClick={() => handleMobileNavigation('/help')}
+              <Link 
+                href="/help"
+                onClick={() => setShowMobileMenu(false)}
                 className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
               >
                 <Info size={18} className="mr-3" />
                 Help
-              </button>
+              </Link>
 
               {/* Auth Section */}
               <div className="pt-6 border-t border-gray-200 mt-4 space-y-3">
@@ -557,7 +545,10 @@ export default function ClientHome({ busesWithLocations }) {
                       <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
                     </div>
                     <button 
-                      onClick={handleLogout}
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        handleLogout();
+                      }}
                       className="w-full bg-red-500 text-white px-6 py-4 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-sm text-center touch-manipulation"
                     >
                       Logout
@@ -566,8 +557,8 @@ export default function ClientHome({ busesWithLocations }) {
                 ) : (
                   <button 
                     onClick={() => {
-                      setShowLoginModal(true);
                       setShowMobileMenu(false);
+                      setShowLoginModal(true);
                     }}
                     className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm text-center touch-manipulation"
                   >
@@ -581,7 +572,7 @@ export default function ClientHome({ busesWithLocations }) {
       </header>
 
       {/* Main Content with safe area padding */}
-      <div className="flex-1 pt-16 pb-8 safe-area-inset"> {/* Adjusted padding for mobile */}
+      <div className="flex-1 pt-16 pb-8 safe-area-inset">
         
         {/* Enhanced Map Modal with Mobile Back Button */}
         {showMapModal && (
@@ -730,7 +721,6 @@ export default function ClientHome({ busesWithLocations }) {
                   </form>
                 ) : (
                   <form onSubmit={handleRegister} className="space-y-4">
-                    {/* Registration form remains the same */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         <User size={16} className="inline mr-2" />
@@ -868,7 +858,6 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         )}
 
-        {/* Rest of your components (Hero Section, All Buses Section, Footer) remain the same */}
         {/* Hero Section */}
         <section className="relative bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white py-12 md:py-16 px-4 overflow-hidden h-[400px] md:h-[450px]">
           <div className="absolute inset-0">

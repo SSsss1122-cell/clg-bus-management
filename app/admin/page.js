@@ -11,6 +11,9 @@ const supabase = createClient(
 );
 
 export default function AdminPage() {
+  // ==============================================
+  // STATE MANAGEMENT SECTION
+  // ==============================================
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -26,17 +29,39 @@ export default function AdminPage() {
   const [communityMessages, setCommunityMessages] = useState([]);
   const [newCommunityMessage, setNewCommunityMessage] = useState('');
 
+  // Bus Details State
+  const [busDetails, setBusDetails] = useState([]);
+  const [selectedBusDetail, setSelectedBusDetail] = useState(null);
+  const [showBusDetailsForm, setShowBusDetailsForm] = useState(false);
+  const [newBusDetail, setNewBusDetail] = useState({
+    bus_number: '',
+    route_name: '',
+    driver_name: '',
+    driver_number: '',
+    password: '',
+    puc_expiry: '',
+    insurance_expiry: '',
+    fitness_expiry: '',
+    permit_expiry: '',
+    last_service_date: '',
+    next_service_due: '',
+    remarks: '',
+    last_service_km: '',
+    next_service_km: '',
+    current_km: ''
+  });
+
   // Form states
   const [newAnnouncement, setNewAnnouncement] = useState({
     title: '',
     message: ''
   });
- const [newNotice, setNewNotice] = useState({
-  title: '',
-  description: '',
-  pdf_url: '',
-  selectedStudents: [] // This will store selected student IDs
-});
+  const [newNotice, setNewNotice] = useState({
+    title: '',
+    description: '',
+    pdf_url: '',
+    selectedStudents: []
+  });
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false);
   const [showNoticeForm, setShowNoticeForm] = useState(false);
   const [mediaModal, setMediaModal] = useState({ open: false, url: '', type: '' });
@@ -55,7 +80,9 @@ export default function AdminPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteResult, setDeleteResult] = useState({ success: null, message: '' });
 
-  // Real-time bus location tracking
+  // ==============================================
+  // EFFECTS & INITIALIZATION SECTION
+  // ==============================================
   useEffect(() => {
     fetchAllData();
     
@@ -105,6 +132,9 @@ export default function AdminPage() {
     };
   }, []);
 
+  // ==============================================
+  // DATA FETCHING SECTION
+  // ==============================================
   const fetchAllData = async () => {
     setLoading(true);
     try {
@@ -115,7 +145,8 @@ export default function AdminPage() {
         fetchAnnouncements(),
         fetchNotices(),
         fetchBuses(),
-        fetchCommunityMessages()
+        fetchCommunityMessages(),
+        fetchBusDetails()
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -125,19 +156,16 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch bus locations
   const fetchBusLocations = async () => {
     try {
       console.log('Fetching bus locations...');
       
-      // First, get all buses
       const { data: allBuses, error: busesError } = await supabase
         .from('buses')
         .select('*');
 
       if (busesError) throw busesError;
 
-      // Then get latest locations for each bus
       const busLocationsWithData = await Promise.all(
         allBuses.map(async (bus) => {
           const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
@@ -151,7 +179,6 @@ export default function AdminPage() {
             .limit(1)
             .maybeSingle();
 
-          // Check if location data is recent (within 10 seconds)
           const isLocationRecent = location && (new Date() - new Date(location.updated_at)) < 10000;
 
           return {
@@ -184,177 +211,6 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch all bus location data for developer settings
-  const fetchBusLocationData = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('bus_locations')
-        .select(`
-          *,
-          buses (
-            bus_number,
-            route_name
-          )
-        `)
-        .order('updated_at', { ascending: false })
-        .limit(1000);
-
-      if (error) throw error;
-
-      const formattedData = data?.map(record => ({
-        id: record.id,
-        bus_id: record.bus_id,
-        bus_number: record.buses?.bus_number || 'N/A',
-        route_name: record.buses?.route_name || 'No Route',
-        latitude: record.latitude,
-        longitude: record.longitude,
-        speed: record.speed,
-        current_location: record.current_location,
-        updated_at: record.updated_at,
-        created_at: record.created_at
-      })) || [];
-
-      setBusLocationData(formattedData);
-    } catch (error) {
-      console.error('Error fetching bus location data:', error);
-      setBusLocationData([]);
-    }
-  };
-
-  // Delete bus locations with filters
-  const deleteBusLocations = async () => {
-    setDeleteLoading(true);
-    setDeleteResult({ success: null, message: '' });
-
-    try {
-      let query = supabase.from('bus_locations').delete();
-
-      // Apply filters
-      if (deleteFilter.bus_id) {
-        query = query.eq('bus_id', deleteFilter.bus_id);
-      }
-
-      if (deleteFilter.start_date) {
-        query = query.gte('updated_at', deleteFilter.start_date);
-      }
-
-      if (deleteFilter.end_date) {
-        const endDate = new Date(deleteFilter.end_date);
-        endDate.setHours(23, 59, 59, 999);
-        query = query.lte('updated_at', endDate.toISOString());
-      }
-
-      if (deleteFilter.older_than_days) {
-        const olderThanDate = new Date();
-        olderThanDate.setDate(olderThanDate.getDate() - parseInt(deleteFilter.older_than_days));
-        query = query.lt('updated_at', olderThanDate.toISOString());
-      }
-
-      const { error, count } = await query;
-
-      if (error) throw error;
-
-      setDeleteResult({
-        success: true,
-        message: `Successfully deleted ${count || 'all matching'} bus location records.`
-      });
-
-      // Refresh data
-      fetchBusLocationData();
-      fetchBusLocations();
-
-      // Reset filters
-      setDeleteFilter({
-        bus_id: '',
-        start_date: '',
-        end_date: '',
-        older_than_days: ''
-      });
-
-    } catch (error) {
-      console.error('Error deleting bus locations:', error);
-      setDeleteResult({
-        success: false,
-        message: `Error deleting records: ${error.message}`
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  // Add function to toggle student selection
-const toggleStudentSelection = (studentId) => {
-  setNewNotice(prev => {
-    const isSelected = prev.selectedStudents.includes(studentId);
-    if (isSelected) {
-      return {
-        ...prev,
-        selectedStudents: prev.selectedStudents.filter(id => id !== studentId)
-      };
-    } else {
-      return {
-        ...prev,
-        selectedStudents: [...prev.selectedStudents, studentId]
-      };
-    }
-  });
-};
-
-// Add function to select all students
-const selectAllStudents = () => {
-  const allStudentIds = students.map(student => student.student_id);
-  setNewNotice(prev => ({
-    ...prev,
-    selectedStudents: allStudentIds
-  }));
-};
-
-// Add function to clear all selections
-const clearAllSelections = () => {
-  setNewNotice(prev => ({
-    ...prev,
-    selectedStudents: []
-  }));
-};
-
-  // Delete all bus locations (with confirmation)
-  const deleteAllBusLocations = async () => {
-    if (!confirm('⚠️ DANGER: This will delete ALL bus location records. This action cannot be undone. Are you sure?')) {
-      return;
-    }
-
-    setDeleteLoading(true);
-    setDeleteResult({ success: null, message: '' });
-
-    try {
-      const { error, count } = await supabase
-        .from('bus_locations')
-        .delete()
-        .neq('id', 0);
-
-      if (error) throw error;
-
-      setDeleteResult({
-        success: true,
-        message: `Successfully deleted all bus location records.`
-      });
-
-      // Refresh data
-      fetchBusLocationData();
-      fetchBusLocations();
-
-    } catch (error) {
-      console.error('Error deleting all bus locations:', error);
-      setDeleteResult({
-        success: false,
-        message: `Error deleting all records: ${error.message}`
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  // Fetch complaints with student details and calculate daily complaints
   const fetchComplaints = async () => {
     try {
       const { data: complaintsData, error } = await supabase
@@ -399,7 +255,6 @@ const clearAllSelections = () => {
     }
   };
 
-  // Fetch all students
   const fetchStudents = async () => {
     try {
       const { data, error } = await supabase
@@ -415,7 +270,6 @@ const clearAllSelections = () => {
     }
   };
 
-  // Fetch announcements
   const fetchAnnouncements = async () => {
     try {
       const { data, error } = await supabase
@@ -431,42 +285,37 @@ const clearAllSelections = () => {
     }
   };
 
-  // Fetch notices
-  // Fetch notices with student targeting information
-const fetchNotices = async () => {
-  try {
-    // First, fetch all notices
-    const { data: noticesData, error: noticesError } = await supabase
-      .from('notices')
-      .select('*')
-      .order('created_at', { ascending: false });
+  const fetchNotices = async () => {
+    try {
+      const { data: noticesData, error: noticesError } = await supabase
+        .from('notices')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (noticesError) throw noticesError;
+      if (noticesError) throw noticesError;
 
-    // For each notice, fetch the targeted students count
-    const noticesWithTargeting = await Promise.all(
-      (noticesData || []).map(async (notice) => {
-        const { data: noticeStudents, error } = await supabase
-          .from('notice_students')
-          .select('student_id')
-          .eq('notice_id', notice.id);
+      const noticesWithTargeting = await Promise.all(
+        (noticesData || []).map(async (notice) => {
+          const { data: noticeStudents, error } = await supabase
+            .from('notice_students')
+            .select('student_id')
+            .eq('notice_id', notice.id);
 
-        return {
-          ...notice,
-          targeted_students_count: noticeStudents?.length || 0,
-          has_targeted_students: (noticeStudents?.length || 0) > 0
-        };
-      })
-    );
+          return {
+            ...notice,
+            targeted_students_count: noticeStudents?.length || 0,
+            has_targeted_students: (noticeStudents?.length || 0) > 0
+          };
+        })
+      );
 
-    setNotices(noticesWithTargeting);
-  } catch (error) {
-    console.error('Error fetching notices:', error);
-    setNotices([]);
-  }
-};
+      setNotices(noticesWithTargeting);
+    } catch (error) {
+      console.error('Error fetching notices:', error);
+      setNotices([]);
+    }
+  };
 
-  // Fetch buses
   const fetchBuses = async () => {
     try {
       const { data, error } = await supabase
@@ -481,7 +330,6 @@ const fetchNotices = async () => {
     }
   };
 
-  // Fetch community messages
   const fetchCommunityMessages = async () => {
     try {
       const { data, error } = await supabase
@@ -498,50 +346,91 @@ const fetchNotices = async () => {
     }
   };
 
-  // Send community message
-  const sendCommunityMessage = async (e) => {
+  // ==============================================
+  // BUS DETAILS FUNCTIONS SECTION
+  // ==============================================
+  const fetchBusDetails = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('buses')
+        .select('*')
+        .order('bus_number');
+
+      if (error) throw error;
+      setBusDetails(data || []);
+    } catch (error) {
+      console.error('Error fetching bus details:', error);
+      setBusDetails([]);
+    }
+  };
+
+  const handleCreateBusDetail = async (e) => {
     e.preventDefault();
-    if (!newCommunityMessage.trim()) return;
-
     try {
-      const { error } = await supabase
-        .from('community_messages')
-        .insert([
-          {
-            username: 'Admin',
-            message: newCommunityMessage.trim()
-          }
-        ]);
+      const { data, error } = await supabase
+        .from('buses')
+        .insert([newBusDetail])
+        .select();
 
       if (error) throw error;
 
-      setNewCommunityMessage('');
-      fetchCommunityMessages();
+      alert('Bus details added successfully!');
+      setNewBusDetail({
+        bus_number: '', route_name: '', driver_name: '', driver_number: '', password: '',
+        puc_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '',
+        last_service_date: '', next_service_due: '', remarks: '',
+        last_service_km: '', next_service_km: '', current_km: ''
+      });
+      setShowBusDetailsForm(false);
+      fetchBusDetails();
     } catch (error) {
-      console.error('Error sending community message:', error);
-      alert('Error sending message: ' + error.message);
+      console.error('Error creating bus detail:', error);
+      alert('Error creating bus detail: ' + error.message);
     }
   };
 
-  // Delete community message
-  const deleteCommunityMessage = async (messageId) => {
+  const handleUpdateBusDetail = async (e) => {
+    e.preventDefault();
     try {
       const { error } = await supabase
-        .from('community_messages')
+        .from('buses')
+        .update(newBusDetail)
+        .eq('id', selectedBusDetail.id);
+
+      if (error) throw error;
+
+      alert('Bus details updated successfully!');
+      setSelectedBusDetail(null);
+      setShowBusDetailsForm(false);
+      fetchBusDetails();
+    } catch (error) {
+      console.error('Error updating bus detail:', error);
+      alert('Error updating bus detail: ' + error.message);
+    }
+  };
+
+  const handleDeleteBusDetail = async (busId) => {
+    if (!confirm('Are you sure you want to delete this bus detail?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('buses')
         .delete()
-        .eq('id', messageId);
+        .eq('id', busId);
 
       if (error) throw error;
 
-      alert('Message deleted successfully!');
-      fetchCommunityMessages();
+      alert('Bus details deleted successfully!');
+      fetchBusDetails();
     } catch (error) {
-      console.error('Error deleting community message:', error);
-      alert('Error deleting message: ' + error.message);
+      console.error('Error deleting bus detail:', error);
+      alert('Error deleting bus detail: ' + error.message);
     }
   };
 
-  // Create new announcement
+  // ==============================================
+  // ANNOUNCEMENTS FUNCTIONS SECTION
+  // ==============================================
   const handleCreateAnnouncement = async (e) => {
     e.preventDefault();
     try {
@@ -567,52 +456,129 @@ const fetchNotices = async () => {
     }
   };
 
-  // Create new notice
-  // Create new notice
-// Create new notice with student targeting
-const handleCreateNotice = async (e) => {
-  e.preventDefault();
-  try {
-    // First, create the notice
-    const { data: noticeData, error: noticeError } = await supabase
-      .from('notices')
-      .insert([
-        {
-          title: newNotice.title,
-          description: newNotice.description,
-          pdf_url: newNotice.pdf_url || null,
-        }
-      ])
-      .select();
+  // ==============================================
+  // NOTICES FUNCTIONS SECTION
+  // ==============================================
+  const toggleStudentSelection = (studentId) => {
+    setNewNotice(prev => {
+      const isSelected = prev.selectedStudents.includes(studentId);
+      if (isSelected) {
+        return {
+          ...prev,
+          selectedStudents: prev.selectedStudents.filter(id => id !== studentId)
+        };
+      } else {
+        return {
+          ...prev,
+          selectedStudents: [...prev.selectedStudents, studentId]
+        };
+      }
+    });
+  };
 
-    if (noticeError) throw noticeError;
+  const selectAllStudents = () => {
+    const allStudentIds = students.map(student => student.student_id);
+    setNewNotice(prev => ({
+      ...prev,
+      selectedStudents: allStudentIds
+    }));
+  };
 
-    const noticeId = noticeData[0].id;
+  const clearAllSelections = () => {
+    setNewNotice(prev => ({
+      ...prev,
+      selectedStudents: []
+    }));
+  };
 
-    // If specific students are selected, create entries in notice_students table
-    if (newNotice.selectedStudents.length > 0) {
-      const noticeStudentsData = newNotice.selectedStudents.map(studentId => ({
-        notice_id: noticeId,
-        student_id: studentId
-      }));
+  const handleCreateNotice = async (e) => {
+    e.preventDefault();
+    try {
+      const { data: noticeData, error: noticeError } = await supabase
+        .from('notices')
+        .insert([
+          {
+            title: newNotice.title,
+            description: newNotice.description,
+            pdf_url: newNotice.pdf_url || null,
+          }
+        ])
+        .select();
 
-      const { error: noticeStudentsError } = await supabase
-        .from('notice_students')
-        .insert(noticeStudentsData);
+      if (noticeError) throw noticeError;
 
-      if (noticeStudentsError) throw noticeStudentsError;
+      const noticeId = noticeData[0].id;
+
+      if (newNotice.selectedStudents.length > 0) {
+        const noticeStudentsData = newNotice.selectedStudents.map(studentId => ({
+          notice_id: noticeId,
+          student_id: studentId
+        }));
+
+        const { error: noticeStudentsError } = await supabase
+          .from('notice_students')
+          .insert(noticeStudentsData);
+
+        if (noticeStudentsError) throw noticeStudentsError;
+      }
+
+      alert('Notice created successfully!');
+      setNewNotice({ title: '', description: '', pdf_url: '', selectedStudents: [] });
+      setShowNoticeForm(false);
+      fetchNotices();
+    } catch (error) {
+      console.error('Error creating notice:', error);
+      alert('Error creating notice: ' + error.message);
     }
+  };
 
-    alert('Notice created successfully!');
-    setNewNotice({ title: '', description: '', pdf_url: '', selectedStudents: [] });
-    setShowNoticeForm(false);
-    fetchNotices();
-  } catch (error) {
-    console.error('Error creating notice:', error);
-    alert('Error creating notice: ' + error.message);
-  }
-};
-  // Update student fees status
+  // ==============================================
+  // COMMUNITY FUNCTIONS SECTION
+  // ==============================================
+  const sendCommunityMessage = async (e) => {
+    e.preventDefault();
+    if (!newCommunityMessage.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('community_messages')
+        .insert([
+          {
+            username: 'Admin',
+            message: newCommunityMessage.trim()
+          }
+        ]);
+
+      if (error) throw error;
+
+      setNewCommunityMessage('');
+      fetchCommunityMessages();
+    } catch (error) {
+      console.error('Error sending community message:', error);
+      alert('Error sending message: ' + error.message);
+    }
+  };
+
+  const deleteCommunityMessage = async (messageId) => {
+    try {
+      const { error } = await supabase
+        .from('community_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      alert('Message deleted successfully!');
+      fetchCommunityMessages();
+    } catch (error) {
+      console.error('Error deleting community message:', error);
+      alert('Error deleting message: ' + error.message);
+    }
+  };
+
+  // ==============================================
+  // STUDENT FUNCTIONS SECTION
+  // ==============================================
   const updateFeesStatus = async (studentId, newStatus) => {
     try {
       const { error } = await supabase
@@ -630,7 +596,140 @@ const handleCreateNotice = async (e) => {
     }
   };
 
-  // Open media modal
+  // ==============================================
+  // DEVELOPER SETTINGS FUNCTIONS SECTION
+  // ==============================================
+  const fetchBusLocationData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('bus_locations')
+        .select(`
+          *,
+          buses (
+            bus_number,
+            route_name
+          )
+        `)
+        .order('updated_at', { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+
+      const formattedData = data?.map(record => ({
+        id: record.id,
+        bus_id: record.bus_id,
+        bus_number: record.buses?.bus_number || 'N/A',
+        route_name: record.buses?.route_name || 'No Route',
+        latitude: record.latitude,
+        longitude: record.longitude,
+        speed: record.speed,
+        current_location: record.current_location,
+        updated_at: record.updated_at,
+        created_at: record.created_at
+      })) || [];
+
+      setBusLocationData(formattedData);
+    } catch (error) {
+      console.error('Error fetching bus location data:', error);
+      setBusLocationData([]);
+    }
+  };
+
+  const deleteBusLocations = async () => {
+    setDeleteLoading(true);
+    setDeleteResult({ success: null, message: '' });
+
+    try {
+      let query = supabase.from('bus_locations').delete();
+
+      if (deleteFilter.bus_id) {
+        query = query.eq('bus_id', deleteFilter.bus_id);
+      }
+
+      if (deleteFilter.start_date) {
+        query = query.gte('updated_at', deleteFilter.start_date);
+      }
+
+      if (deleteFilter.end_date) {
+        const endDate = new Date(deleteFilter.end_date);
+        endDate.setHours(23, 59, 59, 999);
+        query = query.lte('updated_at', endDate.toISOString());
+      }
+
+      if (deleteFilter.older_than_days) {
+        const olderThanDate = new Date();
+        olderThanDate.setDate(olderThanDate.getDate() - parseInt(deleteFilter.older_than_days));
+        query = query.lt('updated_at', olderThanDate.toISOString());
+      }
+
+      const { error, count } = await query;
+
+      if (error) throw error;
+
+      setDeleteResult({
+        success: true,
+        message: `Successfully deleted ${count || 'all matching'} bus location records.`
+      });
+
+      fetchBusLocationData();
+      fetchBusLocations();
+
+      setDeleteFilter({
+        bus_id: '',
+        start_date: '',
+        end_date: '',
+        older_than_days: ''
+      });
+
+    } catch (error) {
+      console.error('Error deleting bus locations:', error);
+      setDeleteResult({
+        success: false,
+        message: `Error deleting records: ${error.message}`
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const deleteAllBusLocations = async () => {
+    if (!confirm('⚠️ DANGER: This will delete ALL bus location records. This action cannot be undone. Are you sure?')) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteResult({ success: null, message: '' });
+
+    try {
+      const { error, count } = await supabase
+        .from('bus_locations')
+        .delete()
+        .neq('id', 0);
+
+      if (error) throw error;
+
+      setDeleteResult({
+        success: true,
+        message: `Successfully deleted all bus location records.`
+      });
+
+      fetchBusLocationData();
+      fetchBusLocations();
+
+    } catch (error) {
+      console.error('Error deleting all bus locations:', error);
+      setDeleteResult({
+        success: false,
+        message: `Error deleting all records: ${error.message}`
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // ==============================================
+  // UTILITY FUNCTIONS SECTION
+  // ==============================================
   const openMediaModal = (url, type) => {
     setMediaModal({ open: true, url, type });
   };
@@ -663,12 +762,10 @@ const handleCreateNotice = async (e) => {
     });
   };
 
-  // Function to open bus location in Google Maps
   const openInGoogleMaps = (lat, lng) => {
     window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank');
   };
 
-  // Get Google Maps embed URL for iframe
   const getGoogleMapsUrl = (coordinates) => {
     if (!coordinates || !coordinates.lat || !coordinates.lng) {
       return "https://www.google.com/maps/embed/v1/view?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&center=17.3616,78.4747&zoom=15&maptype=roadmap";
@@ -677,14 +774,18 @@ const handleCreateNotice = async (e) => {
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
 
-  // Calculate dashboard statistics
+  // ==============================================
+  // COMPONENT VARIABLES SECTION
+  // ==============================================
   const activeBuses = busLocations.filter(bus => bus.is_active).length;
   const totalBuses = busLocations.length;
   const totalStudents = students.length;
   const totalNotices = notices.length;
   const totalCommunityMessages = communityMessages.length;
 
-  // Mobile responsive complaint card
+  // ==============================================
+  // REUSABLE COMPONENTS SECTION
+  // ==============================================
   const ComplaintCard = ({ complaint }) => {
     const isToday = new Date(complaint.created_at).toDateString() === new Date().toDateString();
     const isExpanded = expandedComplaint === complaint.id;
@@ -779,6 +880,29 @@ const handleCreateNotice = async (e) => {
     );
   };
 
+  // ==============================================
+  // MISSING FUNCTION (Add this)
+  // ==============================================
+  const updateComplaintStatus = async (complaintId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('complaints')
+        .update({ status: newStatus })
+        .eq('id', complaintId);
+      
+      if (error) throw error;
+      
+      alert('Complaint status updated!');
+      fetchComplaints();
+    } catch (error) {
+      console.error('Error updating complaint status:', error);
+      alert('Error updating complaint status: ' + error.message);
+    }
+  };
+
+  // ==============================================
+  // MAIN COMPONENT RENDER SECTION
+  // ==============================================
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -818,7 +942,6 @@ const handleCreateNotice = async (e) => {
                 <span className="hidden sm:inline">Refresh</span>
               </button>
               
-              {/* Developer Settings Button */}
               <button 
                 onClick={() => {
                   setShowDeveloperSettings(!showDeveloperSettings);
@@ -832,7 +955,6 @@ const handleCreateNotice = async (e) => {
                 <span className="hidden sm:inline">Developer</span>
               </button>
               
-              {/* Mobile Menu Button */}
               <button 
                 onClick={() => setShowMobileMenu(!showMobileMenu)}
                 className="lg:hidden text-gray-700 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-gray-100"
@@ -1013,6 +1135,7 @@ const handleCreateNotice = async (e) => {
               {[
                 { id: 'dashboard', name: 'Dashboard', icon: Navigation },
                 { id: 'buses', name: 'Bus Locations', icon: MapPin },
+                { id: 'bus-details', name: 'Bus Details', icon: Database },
                 { id: 'complaints', name: 'Complaints', icon: AlertTriangle },
                 { id: 'announcements', name: 'Announcements', icon: Megaphone },
                 { id: 'notices', name: 'Notices', icon: Bell },
@@ -1049,6 +1172,7 @@ const handleCreateNotice = async (e) => {
               {[
                 { id: 'dashboard', name: 'Dashboard', icon: Navigation },
                 { id: 'buses', name: 'Bus Locations', icon: MapPin },
+                { id: 'bus-details', name: 'Bus Details', icon: Database },
                 { id: 'complaints', name: 'Complaints', icon: AlertTriangle },
                 { id: 'announcements', name: 'Announcements', icon: Megaphone },
                 { id: 'notices', name: 'Notices', icon: Bell },
@@ -1366,6 +1490,563 @@ const handleCreateNotice = async (e) => {
               </div>
             )}
 
+            {/* Bus Details Tab */}
+        {/* ============================================== */}
+{/* BUS DETAILS TAB */}
+{/* ============================================== */}
+{activeTab === 'bus-details' && (
+  <div className="space-y-6">
+    <div className="bg-white rounded-lg shadow">
+      <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <h2 className="text-lg font-semibold text-gray-900">Bus Details ({busDetails.length})</h2>
+        <button
+          onClick={() => {
+            setSelectedBusDetail(null);
+            setNewBusDetail({
+              bus_number: '', route_name: '', driver_name: '', driver_number: '', password: '',
+              puc_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '',
+              last_service_date: '', next_service_due: '', remarks: '',
+              last_service_km: '', next_service_km: '', current_km: ''
+            });
+            setShowBusDetailsForm(true);
+          }}
+          className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm w-full sm:w-auto justify-center"
+        >
+          <Plus size={16} className="mr-2" />
+          Add Bus Details
+        </button>
+      </div>
+      <div className="p-4 sm:p-6">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bus No</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Route</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Driver</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Current KM</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Next Service</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {busDetails.map((bus) => {
+                const today = new Date();
+                const pucExpiry = bus.puc_expiry ? new Date(bus.puc_expiry) : null;
+                const insuranceExpiry = bus.insurance_expiry ? new Date(bus.insurance_expiry) : null;
+                const fitnessExpiry = bus.fitness_expiry ? new Date(bus.fitness_expiry) : null;
+                const permitExpiry = bus.permit_expiry ? new Date(bus.permit_expiry) : null;
+                const nextServiceDue = bus.next_service_due ? new Date(bus.next_service_due) : null;
+                
+                const isPUCExpired = pucExpiry && pucExpiry < today;
+                const isInsuranceExpired = insuranceExpiry && insuranceExpiry < today;
+                const isFitnessExpired = fitnessExpiry && fitnessExpiry < today;
+                const isPermitExpired = permitExpiry && permitExpiry < today;
+                const isServiceDue = nextServiceDue && nextServiceDue < today;
+                
+                const hasExpiredItems = isPUCExpired || isInsuranceExpired || isFitnessExpired || isPermitExpired || isServiceDue;
+                
+                // Calculate days until expiry
+                const getDaysUntil = (date) => date ? Math.ceil((date - today) / (1000 * 60 * 60 * 24)) : null;
+                const serviceDays = getDaysUntil(nextServiceDue);
+
+                return (
+                  <tr key={bus.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">Bus {bus.bus_number}</div>
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-gray-700">
+                      {bus.route_name || 'N/A'}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-gray-700">
+                      <div>{bus.driver_name || 'N/A'}</div>
+                      {bus.driver_number && (
+                        <div className="text-xs text-gray-500">{bus.driver_number}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap text-gray-700">
+                      <div>{bus.current_km || 'N/A'}</div>
+                      {bus.next_service_km && (
+                        <div className="text-xs text-gray-500">Next: {bus.next_service_km}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      {nextServiceDue ? (
+                        <div className={`text-sm font-medium ${
+                          isServiceDue ? 'text-red-700' : serviceDays <= 7 ? 'text-yellow-700' : 'text-green-700'
+                        }`}>
+                          {nextServiceDue.toLocaleDateString()}
+                          {serviceDays && (
+                            <div className={`text-xs ${
+                              isServiceDue ? 'text-red-600' : serviceDays <= 7 ? 'text-yellow-600' : 'text-green-600'
+                            }`}>
+                              {isServiceDue ? `Overdue by ${Math.abs(serviceDays)} days` : 
+                               serviceDays <= 7 ? `${serviceDays} days left` : 
+                               `${serviceDays} days left`}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 text-sm">Not set</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      {hasExpiredItems ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          <AlertTriangle size={12} className="mr-1" />
+                          Attention Needed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                          <Check size={12} className="mr-1" />
+                          All Good
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-4 whitespace-nowrap space-x-2">
+                      <button
+                        onClick={() => {
+                          setSelectedBusDetail(bus);
+                          setNewBusDetail(bus);
+                          setShowBusDetailsForm(true);
+                        }}
+                        className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBusDetail(bus.id)}
+                        className="text-red-600 hover:text-red-900 text-sm font-medium"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {busDetails.length === 0 && (
+            <div className="text-center py-8">
+              <Database size={32} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500">No bus details found</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {/* Detailed Bus Information Cards */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {busDetails.map((bus) => {
+        const today = new Date();
+        const pucExpiry = bus.puc_expiry ? new Date(bus.puc_expiry) : null;
+        const insuranceExpiry = bus.insurance_expiry ? new Date(bus.insurance_expiry) : null;
+        const fitnessExpiry = bus.fitness_expiry ? new Date(bus.fitness_expiry) : null;
+        const permitExpiry = bus.permit_expiry ? new Date(bus.permit_expiry) : null;
+        const nextServiceDue = bus.next_service_due ? new Date(bus.next_service_due) : null;
+        const lastServiceDate = bus.last_service_date ? new Date(bus.last_service_date) : null;
+
+        const getDaysUntil = (date) => date ? Math.ceil((date - today) / (1000 * 60 * 60 * 24)) : null;
+        const getStatus = (date, type) => {
+          if (!date) return { color: 'gray', text: 'Not set', icon: Clock, textColor: 'text-gray-700' };
+          const days = getDaysUntil(date);
+          if (days < 0) return { color: 'red', text: `EXPIRED ${Math.abs(days)} days ago`, icon: AlertTriangle, textColor: 'text-red-800' };
+          if (days <= 7) return { color: 'yellow', text: `${days} days left`, icon: AlertTriangle, textColor: 'text-yellow-800' };
+          return { color: 'green', text: `${days} days left`, icon: Check, textColor: 'text-green-800' };
+        };
+
+        const pucStatus = getStatus(pucExpiry, 'PUC');
+        const insuranceStatus = getStatus(insuranceExpiry, 'Insurance');
+        const fitnessStatus = getStatus(fitnessExpiry, 'Fitness');
+        const permitStatus = getStatus(permitExpiry, 'Permit');
+        const serviceStatus = getStatus(nextServiceDue, 'Service');
+
+        const PucIcon = pucStatus.icon;
+        const InsuranceIcon = insuranceStatus.icon;
+        const FitnessIcon = fitnessStatus.icon;
+        const PermitIcon = permitStatus.icon;
+        const ServiceIcon = serviceStatus.icon;
+
+        return (
+          <div key={bus.id} className="bg-white rounded-lg shadow border border-gray-200 p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Bus {bus.bus_number}</h3>
+                <p className="text-gray-600">{bus.route_name || 'No route assigned'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-500">Driver</p>
+                <p className="font-medium text-gray-900">{bus.driver_name || 'Not assigned'}</p>
+                {bus.driver_number && (
+                  <p className="text-xs text-gray-500">{bus.driver_number}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Service Information */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <RefreshCw size={16} className="mr-2 text-gray-600" />
+                Service Information
+              </h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600">Current KM</p>
+                  <p className="font-medium text-gray-900">{bus.current_km || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600">Last Service KM</p>
+                  <p className="font-medium text-gray-900">{bus.last_service_km || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600">Next Service KM</p>
+                  <p className="font-medium text-gray-900">{bus.next_service_km || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600">Last Service</p>
+                  <p className="font-medium text-gray-900">
+                    {lastServiceDate ? lastServiceDate.toLocaleDateString() : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Expiry Information */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 mb-2">Document Expiry & Service Due</h4>
+              
+              {/* PUC */}
+              <div className={`flex justify-between items-center p-3 rounded-lg border-2 ${
+                pucStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+                pucStatus.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+                pucStatus.color === 'green' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center">
+                  <PucIcon size={16} className={`mr-2 ${
+                    pucStatus.color === 'red' ? 'text-red-600' :
+                    pucStatus.color === 'yellow' ? 'text-yellow-600' : 
+                    pucStatus.color === 'green' ? 'text-green-600' : 'text-gray-600'
+                  }`} />
+                  <span className="font-medium text-gray-900">PUC</span>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${pucStatus.textColor}`}>
+                    {pucExpiry ? pucExpiry.toLocaleDateString() : 'Not set'}
+                  </p>
+                  <p className={`text-xs font-medium ${pucStatus.textColor}`}>
+                    {pucStatus.text}
+                  </p>
+                </div>
+              </div>
+
+              {/* Insurance */}
+              <div className={`flex justify-between items-center p-3 rounded-lg border-2 ${
+                insuranceStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+                insuranceStatus.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+                insuranceStatus.color === 'green' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center">
+                  <InsuranceIcon size={16} className={`mr-2 ${
+                    insuranceStatus.color === 'red' ? 'text-red-600' :
+                    insuranceStatus.color === 'yellow' ? 'text-yellow-600' : 
+                    insuranceStatus.color === 'green' ? 'text-green-600' : 'text-gray-600'
+                  }`} />
+                  <span className="font-medium text-gray-900">Insurance</span>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${insuranceStatus.textColor}`}>
+                    {insuranceExpiry ? insuranceExpiry.toLocaleDateString() : 'Not set'}
+                  </p>
+                  <p className={`text-xs font-medium ${insuranceStatus.textColor}`}>
+                    {insuranceStatus.text}
+                  </p>
+                </div>
+              </div>
+
+              {/* Fitness */}
+              <div className={`flex justify-between items-center p-3 rounded-lg border-2 ${
+                fitnessStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+                fitnessStatus.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+                fitnessStatus.color === 'green' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center">
+                  <FitnessIcon size={16} className={`mr-2 ${
+                    fitnessStatus.color === 'red' ? 'text-red-600' :
+                    fitnessStatus.color === 'yellow' ? 'text-yellow-600' : 
+                    fitnessStatus.color === 'green' ? 'text-green-600' : 'text-gray-600'
+                  }`} />
+                  <span className="font-medium text-gray-900">Fitness</span>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${fitnessStatus.textColor}`}>
+                    {fitnessExpiry ? fitnessExpiry.toLocaleDateString() : 'Not set'}
+                  </p>
+                  <p className={`text-xs font-medium ${fitnessStatus.textColor}`}>
+                    {fitnessStatus.text}
+                  </p>
+                </div>
+              </div>
+
+              {/* Permit */}
+              <div className={`flex justify-between items-center p-3 rounded-lg border-2 ${
+                permitStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+                permitStatus.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+                permitStatus.color === 'green' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center">
+                  <PermitIcon size={16} className={`mr-2 ${
+                    permitStatus.color === 'red' ? 'text-red-600' :
+                    permitStatus.color === 'yellow' ? 'text-yellow-600' : 
+                    permitStatus.color === 'green' ? 'text-green-600' : 'text-gray-600'
+                  }`} />
+                  <span className="font-medium text-gray-900">Permit</span>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${permitStatus.textColor}`}>
+                    {permitExpiry ? permitExpiry.toLocaleDateString() : 'Not set'}
+                  </p>
+                  <p className={`text-xs font-medium ${permitStatus.textColor}`}>
+                    {permitStatus.text}
+                  </p>
+                </div>
+              </div>
+
+              {/* Next Service */}
+              <div className={`flex justify-between items-center p-3 rounded-lg border-2 ${
+                serviceStatus.color === 'red' ? 'bg-red-50 border-red-200' :
+                serviceStatus.color === 'yellow' ? 'bg-yellow-50 border-yellow-200' :
+                serviceStatus.color === 'green' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center">
+                  <ServiceIcon size={16} className={`mr-2 ${
+                    serviceStatus.color === 'red' ? 'text-red-600' :
+                    serviceStatus.color === 'yellow' ? 'text-yellow-600' : 
+                    serviceStatus.color === 'green' ? 'text-green-600' : 'text-gray-600'
+                  }`} />
+                  <span className="font-medium text-gray-900">Next Service</span>
+                </div>
+                <div className="text-right">
+                  <p className={`text-sm font-medium ${serviceStatus.textColor}`}>
+                    {nextServiceDue ? nextServiceDue.toLocaleDateString() : 'Not set'}
+                  </p>
+                  <p className={`text-xs font-medium ${serviceStatus.textColor}`}>
+                    {serviceStatus.text}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Remarks */}
+            {bus.remarks && (
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-gray-900 mb-1">Remarks</h4>
+                <p className="text-sm text-gray-700">{bus.remarks}</p>
+              </div>
+            )}
+
+            <div className="mt-4 flex space-x-2">
+              <button
+                onClick={() => {
+                  setSelectedBusDetail(bus);
+                  setNewBusDetail(bus);
+                  setShowBusDetailsForm(true);
+                }}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                Edit Details
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    {/* Bus Details Form Modal */}
+    {showBusDetailsForm && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg max-w-4xl w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {selectedBusDetail ? 'Edit Bus Details' : 'Add Bus Details'}
+            </h3>
+            <button onClick={() => setShowBusDetailsForm(false)} className="text-gray-400 hover:text-gray-600">
+              <X size={20} />
+            </button>
+          </div>
+          <form onSubmit={selectedBusDetail ? handleUpdateBusDetail : handleCreateBusDetail} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bus Number *</label>
+                <input
+                  type="text"
+                  required
+                  value={newBusDetail.bus_number}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, bus_number: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter bus number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Route Name</label>
+                <input
+                  type="text"
+                  value={newBusDetail.route_name}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, route_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter route name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
+                <input
+                  type="text"
+                  value={newBusDetail.driver_name}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, driver_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter driver name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Number</label>
+                <input
+                  type="text"
+                  value={newBusDetail.driver_number}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, driver_number: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter driver phone number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="text"
+                  value={newBusDetail.password}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current KM</label>
+                <input
+                  type="text"
+                  value={newBusDetail.current_km}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, current_km: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter current kilometers"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Service KM</label>
+                <input
+                  type="text"
+                  value={newBusDetail.last_service_km}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, last_service_km: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter last service KM"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Next Service KM</label>
+                <input
+                  type="text"
+                  value={newBusDetail.next_service_km}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, next_service_km: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                  placeholder="Enter next service KM"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">PUC Expiry</label>
+                <input
+                  type="date"
+                  value={newBusDetail.puc_expiry}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, puc_expiry: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Insurance Expiry</label>
+                <input
+                  type="date"
+                  value={newBusDetail.insurance_expiry}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, insurance_expiry: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fitness Expiry</label>
+                <input
+                  type="date"
+                  value={newBusDetail.fitness_expiry}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, fitness_expiry: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Permit Expiry</label>
+                <input
+                  type="date"
+                  value={newBusDetail.permit_expiry}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, permit_expiry: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Service Date</label>
+                <input
+                  type="date"
+                  value={newBusDetail.last_service_date}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, last_service_date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Next Service Due</label>
+                <input
+                  type="date"
+                  value={newBusDetail.next_service_due}
+                  onChange={(e) => setNewBusDetail(prev => ({ ...prev, next_service_due: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
+              <textarea
+                rows={3}
+                value={newBusDetail.remarks}
+                onChange={(e) => setNewBusDetail(prev => ({ ...prev, remarks: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                placeholder="Enter any remarks"
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowBusDetailsForm(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                {selectedBusDetail ? 'Update Bus Details' : 'Add Bus Details'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
+
+
             {/* Complaints Tab */}
             {activeTab === 'complaints' && (
               <div className="bg-white rounded-lg shadow">
@@ -1596,40 +2277,39 @@ const handleCreateNotice = async (e) => {
                     </button>
                   </div>
                   <div className="p-4 sm:p-6">
-                 <div className="space-y-4">
-  {notices.map((notice) => (
-    <div key={notice.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-      <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
-      <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
-      
-      {/* Show targeting information */}
-      <div className="mb-2">
-        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-          notice.has_targeted_students 
-            ? 'bg-purple-100 text-purple-800' 
-            : 'bg-green-100 text-green-800'
-        }`}>
-          {notice.has_targeted_students 
-            ? `Sent to ${notice.targeted_students_count} student(s)` 
-            : 'Broadcast to all students'}
-        </span>
-      </div>
-      
-      {notice.pdf_url && (
-        <a
-          href={notice.pdf_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm"
-        >
-          <FileText size={14} className="mr-1" />
-          View PDF
-        </a>
-      )}
-      <p className="text-xs text-gray-500 mt-2">Posted on {formatDate(notice.created_at)}</p>
-    </div>
-  ))}
-</div>
+                    <div className="space-y-4">
+                      {notices.map((notice) => (
+                        <div key={notice.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base mb-2">{notice.title}</h3>
+                          <p className="text-gray-600 text-sm sm:text-base mb-2">{notice.description}</p>
+                          
+                          <div className="mb-2">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              notice.has_targeted_students 
+                                ? 'bg-purple-100 text-purple-800' 
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {notice.has_targeted_students 
+                                ? `Sent to ${notice.targeted_students_count} student(s)` 
+                                : 'Broadcast to all students'}
+                            </span>
+                          </div>
+                          
+                          {notice.pdf_url && (
+                            <a
+                              href={notice.pdf_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm"
+                            >
+                              <FileText size={14} className="mr-1" />
+                              View PDF
+                            </a>
+                          )}
+                          <p className="text-xs text-gray-500 mt-2">Posted on {formatDate(notice.created_at)}</p>
+                        </div>
+                      ))}
+                    </div>
                     
                     {notices.length === 0 && (
                       <div className="text-center py-8 sm:py-12">
@@ -1641,150 +2321,149 @@ const handleCreateNotice = async (e) => {
                 </div>
 
                 {/* Notice Form Modal */}
-                {/* Notice Form Modal */}
-{showNoticeForm && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div className="bg-white rounded-lg max-w-4xl w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Create Notice</h3>
-        <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
-          <X size={20} />
-        </button>
-      </div>
-      <form onSubmit={handleCreateNotice} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
-          <input
-            type="text"
-            required
-            value={newNotice.title}
-            onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-            placeholder="Enter notice title"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-          <textarea
-            required
-            rows={4}
-            value={newNotice.description}
-            onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-            placeholder="Enter notice description"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (Optional)</label>
-          <input
-            type="url"
-            value={newNotice.pdf_url}
-            onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
-            placeholder="https://example.com/notice.pdf"
-          />
-        </div>
-
-        {/* Student Selection Section */}
-        <div className="border border-gray-200 rounded-lg p-4">
-          <div className="flex justify-between items-center mb-3">
-            <label className="block text-sm font-medium text-gray-700">
-              Send to Specific Students (Optional)
-            </label>
-            <div className="flex space-x-2">
-              <button
-                type="button"
-                onClick={selectAllStudents}
-                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-              >
-                Select All
-              </button>
-              <button
-                type="button"
-                onClick={clearAllSelections}
-                className="text-red-600 hover:text-red-800 text-sm font-medium"
-              >
-                Clear All
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mb-3">
-            {newNotice.selectedStudents.length > 0 
-              ? `Selected ${newNotice.selectedStudents.length} student(s)` 
-              : 'If no students selected, notice will be sent to all students (broadcast)'}
-          </p>
-          
-          <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Select</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">USN</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Name</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Branch</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {students.map((student) => {
-                  const isSelected = newNotice.selectedStudents.includes(student.student_id);
-                  return (
-                    <tr 
-                      key={student.student_id} 
-                      className={`cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
-                      onClick={() => toggleStudentSelection(student.student_id)}
-                    >
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex items-center">
+                {showNoticeForm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg max-w-4xl w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">Create Notice</h3>
+                        <button onClick={() => setShowNoticeForm(false)} className="text-gray-400 hover:text-gray-600">
+                          <X size={20} />
+                        </button>
+                      </div>
+                      <form onSubmit={handleCreateNotice} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
                           <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleStudentSelection(student.student_id)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            onClick={(e) => e.stopPropagation()}
+                            type="text"
+                            required
+                            value={newNotice.title}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, title: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                            placeholder="Enter notice title"
                           />
                         </div>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900">
-                        {student.usn}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                        {student.full_name}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                        {student.branch}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {students.length === 0 && (
-              <div className="text-center py-4 text-gray-500 text-sm">
-                No students found
-              </div>
-            )}
-          </div>
-        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+                          <textarea
+                            required
+                            rows={4}
+                            value={newNotice.description}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, description: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                            placeholder="Enter notice description"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">PDF URL (Optional)</label>
+                          <input
+                            type="url"
+                            value={newNotice.pdf_url}
+                            onChange={(e) => setNewNotice(prev => ({ ...prev, pdf_url: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm bg-white text-gray-900 placeholder-gray-500"
+                            placeholder="https://example.com/notice.pdf"
+                          />
+                        </div>
 
-        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
-          <button
-            type="button"
-            onClick={() => setShowNoticeForm(false)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-          >
-            Create Notice
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
+                        {/* Student Selection Section */}
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-3">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Send to Specific Students (Optional)
+                            </label>
+                            <div className="flex space-x-2">
+                              <button
+                                type="button"
+                                onClick={selectAllStudents}
+                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={clearAllSelections}
+                                className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500 mb-3">
+                            {newNotice.selectedStudents.length > 0 
+                              ? `Selected ${newNotice.selectedStudents.length} student(s)` 
+                              : 'If no students selected, notice will be sent to all students (broadcast)'}
+                          </p>
+                          
+                          <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-gray-50 sticky top-0">
+                                <tr>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Select</th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">USN</th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Name</th>
+                                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Branch</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {students.map((student) => {
+                                  const isSelected = newNotice.selectedStudents.includes(student.student_id);
+                                  return (
+                                    <tr 
+                                      key={student.student_id} 
+                                      className={`cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                                      onClick={() => toggleStudentSelection(student.student_id)}
+                                    >
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        <div className="flex items-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => toggleStudentSelection(student.student_id)}
+                                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900">
+                                        {student.usn}
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                                        {student.full_name}
+                                      </td>
+                                      <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                                        {student.branch}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                            {students.length === 0 && (
+                              <div className="text-center py-4 text-gray-500 text-sm">
+                                No students found
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowNoticeForm(false)}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          >
+                            Create Notice
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

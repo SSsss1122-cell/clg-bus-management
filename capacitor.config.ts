@@ -1,11 +1,9 @@
-// capacitor.config.ts
-import { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
   appId: "com.bus.management",
   appName: "Bus Management",
   webDir: "out",
- 
+  bundledWebRuntime: false,
 };
 
-export default config;
+module.exports = config;

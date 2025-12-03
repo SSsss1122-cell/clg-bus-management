@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   MapPin, Navigation, Menu, Bell, Megaphone, Info, User, 
   BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, 
-  X, ChevronLeft, MessageSquare 
+  X, ChevronLeft, MessageSquare, Home
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -251,15 +251,19 @@ export default function ClientHome({ busesWithLocations }) {
   // Enhanced click outside handler for mobile menu
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (showMobileMenu && 
-          !event.target.closest('.mobile-menu') && 
-          !event.target.closest('.mobile-menu-button')) {
+      const mobileMenu = document.querySelector('.mobile-menu');
+      const menuButton = document.querySelector('.mobile-menu-button');
+      
+      if (showMobileMenu && mobileMenu && menuButton &&
+          !mobileMenu.contains(event.target) && 
+          !menuButton.contains(event.target)) {
         setShowMobileMenu(false);
       }
     };
 
     document.addEventListener('click', handleClickOutside);
     document.addEventListener('touchstart', handleClickOutside);
+    
     return () => {
       document.removeEventListener('click', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
@@ -371,7 +375,7 @@ export default function ClientHome({ busesWithLocations }) {
       <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 safe-area-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Enhanced Logo and Name - Always visible on mobile */}
+            {/* Logo and Name */}
             <div className="flex items-center space-x-3 group flex-shrink-0">
               <div className="bg-white w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all">
                 <img 
@@ -387,7 +391,6 @@ export default function ClientHome({ busesWithLocations }) {
                   <Navigation size={20} />
                 </div>
               </div>
-              {/* Always show text on mobile and desktop */}
               <div className="block">
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">SIT Bus</h1>
                 <p className="text-xs text-gray-500 hidden sm:block">Tracking System</p>
@@ -453,7 +456,10 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
               )}
               <button 
-                onClick={() => setShowMobileMenu(!showMobileMenu)}
+                onClick={() => {
+                  console.log('Menu button clicked');
+                  setShowMobileMenu(!showMobileMenu);
+                }}
                 className="mobile-menu-button text-gray-700 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
                 aria-label="Toggle menu"
               >
@@ -463,112 +469,154 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </div>
 
-        {/* Enhanced Mobile Navigation Menu */}
-        {showMobileMenu && (
-          <div className="md:hidden mobile-menu fixed inset-0 top-16 bg-white/95 backdrop-blur-md z-40 overflow-y-auto safe-area-inset">
-            {/* Mobile Menu Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Menu</h3>
-              <button 
-                onClick={() => setShowMobileMenu(false)}
-                className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
-                aria-label="Close menu"
-              >
-                <X size={20} />
-              </button>
-            </div>
+        {/* Enhanced Mobile Navigation Menu - FIXED VERSION */}
+       {/* Enhanced Mobile Navigation Menu - WITH BACKGROUND FIX */}
+{showMobileMenu && (
+  <div className="md:hidden fixed inset-0 top-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowMobileMenu(false)}>
+    <div className="absolute top-0 right-0 h-full w-3/4 max-w-xs bg-white shadow-2xl mobile-menu" onClick={(e) => e.stopPropagation()}>
+      {/* Mobile Menu Header */}
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+            <Navigation size={18} className="text-white" />
+          </div>
+          <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
+        </div>
+        <button 
+          onClick={() => setShowMobileMenu(false)}
+          className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+          aria-label="Close menu"
+        >
+          <X size={20} className="text-gray-700" />
+        </button>
+      </div>
 
-            <nav className="flex flex-col p-4 space-y-1">
-              {/* Home Link */}
-              <Link 
-                href="/"
-                onClick={() => setShowMobileMenu(false)}
-                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 border-l-4 border-blue-600 pl-4 bg-blue-50 rounded-r-lg text-left flex items-center"
-              >
-                <Navigation size={18} className="mr-3" />
-                Home
-              </Link>
+      {/* Scrollable Menu Content */}
+      <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 safe-area-inset bg-gradient-to-b from-white to-gray-50">
+        <nav className="flex flex-col space-y-1">
+          {/* Home Link */}
+          <Link 
+            href="/"
+            onClick={() => setShowMobileMenu(false)}
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-blue-50 text-left flex items-center border border-gray-100 hover:border-blue-200 shadow-sm"
+          >
+            <Home size={20} className="mr-3 text-blue-600" />
+            <span className="font-semibold">Home</span>
+          </Link>
 
-              {/* Notice Link */}
-              <Link 
-                href="/notice"
-                onClick={() => setShowMobileMenu(false)}
-                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
-              >
-                <Bell size={18} className="mr-3" />
-                Notice
-              </Link>
+          {/* Notice Link */}
+          <Link 
+            href="/notice"
+            onClick={() => setShowMobileMenu(false)}
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-orange-50 text-left flex items-center border border-gray-100 hover:border-orange-200 shadow-sm"
+          >
+            <Bell size={20} className="mr-3 text-orange-600" />
+            <span className="font-semibold">Notice</span>
+          </Link>
 
-              {/* Conditional Links */}
-              <Link 
-                href="/announcements"
-                onClick={() => setShowMobileMenu(false)}
-                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                <Megaphone size={18} className="mr-3" />
-                Announcements
-              </Link>
+          {/* Conditional Links */}
+          <Link 
+            href="/announcements"
+            onClick={() => setShowMobileMenu(false)}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-green-50 border-gray-100 hover:border-green-200'}`}
+          >
+            <Megaphone size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-green-600'}`} />
+            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Announcements</span>
+          </Link>
 
-              <Link 
-                href="/community"
-                onClick={() => setShowMobileMenu(false)}
-                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                <Users size={18} className="mr-3" />
-                Community
-              </Link>
+          <Link 
+            href="/community"
+            onClick={() => setShowMobileMenu(false)}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-purple-50 border-gray-100 hover:border-purple-200'}`}
+          >
+            <Users size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-purple-600'}`} />
+            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Community</span>
+          </Link>
 
-              <Link 
-                href="/complaint"
-                onClick={() => setShowMobileMenu(false)}
-                className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center ${!isLoggedIn ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                <AlertTriangle size={18} className="mr-3" />
-                Complaint
-              </Link>
+          <Link 
+            href="/complaint"
+            onClick={() => setShowMobileMenu(false)}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-red-50 border-gray-100 hover:border-red-200'}`}
+          >
+            <AlertTriangle size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-red-600'}`} />
+            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
+          </Link>
 
-              <Link 
-                href="/help"
-                onClick={() => setShowMobileMenu(false)}
-                className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 pl-4 rounded-r-lg hover:bg-gray-50 text-left flex items-center"
-              >
-                <Info size={18} className="mr-3" />
-                Help
-              </Link>
+          <Link 
+            href="/help"
+            onClick={() => setShowMobileMenu(false)}
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-blue-50 text-left flex items-center border border-gray-100 hover:border-blue-200 shadow-sm"
+          >
+            <Info size={20} className="mr-3 text-blue-600" />
+            <span className="font-semibold">Help</span>
+          </Link>
 
-              {/* Auth Section */}
-              <div className="pt-6 border-t border-gray-200 mt-4 space-y-3">
-                {isLoggedIn ? (
-                  <>
-                    <div className="px-4 py-3 bg-gray-50 rounded-lg">
-                      <p className="text-sm text-gray-600">Logged in as</p>
-                      <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
+          {/* Auth Section */}
+          <div className="pt-8 border-t border-gray-200 mt-4 space-y-4">
+            {isLoggedIn ? (
+              <>
+                {/* User Info Card */}
+                <div className="px-4 py-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm">
+                  <div className="flex items-center mb-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                      <User size={18} className="text-white" />
                     </div>
-                    <button 
-                      onClick={() => {
-                        setShowMobileMenu(false);
-                        handleLogout();
-                      }}
-                      className="w-full bg-red-500 text-white px-6 py-4 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-sm text-center touch-manipulation"
-                    >
-                      Logout
-                    </button>
-                  </>
-                ) : (
+                    <div className="ml-3">
+                      <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
+                      <p className="text-xs text-gray-600 truncate">{currentUser?.usn}</p>
+                    </div>
+                  </div>
                   <button 
                     onClick={() => {
                       setShowMobileMenu(false);
-                      setShowLoginModal(true);
+                      handleLogout();
                     }}
-                    className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all shadow-sm text-center touch-manipulation"
+                    className="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-red-600 hover:to-rose-700 transition-all shadow-sm text-center touch-manipulation"
                   >
-                    Login / Register
+                    Logout
                   </button>
-                )}
+                </div>
+              </>
+            ) : (
+              <div className="px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm">
+                <p className="text-gray-700 mb-4 text-sm font-medium text-center">Login to access all features</p>
+                <button 
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    setShowLoginModal(true);
+                  }}
+                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl text-center touch-manipulation"
+                >
+                  Login / Register
+                </button>
               </div>
-            </nav>
+            )}
           </div>
-        )}
+
+          {/* Footer Links */}
+          <div className="pt-4 mt-4 border-t border-gray-200">
+            <div className="grid grid-cols-2 gap-2">
+              <Link 
+                href="/privacy"
+                onClick={() => setShowMobileMenu(false)}
+                className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                Privacy
+              </Link>
+              <Link 
+                href="/terms"
+                onClick={() => setShowMobileMenu(false)}
+                className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                Terms
+              </Link>
+            </div>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </div>
+)}
       </header>
 
       {/* Main Content with safe area padding */}
@@ -1074,7 +1122,7 @@ export default function ClientHome({ busesWithLocations }) {
         </footer>
       </div>
 
-      {/* Add CSS for safe areas */}
+      {/* Add CSS for safe areas and animations */}
       <style jsx>{`
         .safe-area-inset {
           padding-left: env(safe-area-inset-left);
@@ -1085,6 +1133,19 @@ export default function ClientHome({ busesWithLocations }) {
         }
         .safe-area-bottom {
           padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        .mobile-menu {
+          animation: slideInRight 0.3s ease-out;
+        }
+        
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+          }
+          to {
+            transform: translateX(0);
+          }
         }
       `}</style>
     </div>

@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation';
 
 // Initialize Supabase client
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
 export default function CommunityPage() {
@@ -37,21 +37,24 @@ export default function CommunityPage() {
 
   // Check if user is logged in and get their details
   useEffect(() => {
-    const checkLoginStatus = () => {
+    const checkLoginStatus = async () => {
       try {
         const savedUser = localStorage.getItem('sitBusUser');
         if (savedUser) {
           const user = JSON.parse(savedUser);
-          setUserFullName(user.full_name);
-          setUserUSN(user.usn);
-          // Use full name as display name by default
-          setUsername(user.full_name);
-          setIsLoggedIn(true);
+          if (user && typeof user === 'object') {
+            setUserFullName(user.full_name || '');
+            setUserUSN(user.usn || '');
+            // Use full name as display name by default
+            setUsername(user.full_name || 'User');
+            setIsLoggedIn(true);
+          } else {
+            throw new Error('Invalid user data');
+          }
         } else {
           // User not logged in, redirect to home page
           alert('Please login first to access community chat');
           router.push('/');
-          return;
         }
       } catch (error) {
         console.error('Error checking login status:', error);
@@ -84,10 +87,14 @@ export default function CommunityPage() {
 
   // Set up real-time subscription
   useEffect(() => {
-    if (isLoggedIn) {
-      fetchMessages();
+    if (!isLoggedIn) return;
 
-      const subscription = supabase
+    let subscription;
+    
+    const setupSubscription = async () => {
+      await fetchMessages();
+
+      subscription = supabase
         .channel('community_messages')
         .on(
           'postgres_changes',
@@ -101,57 +108,62 @@ export default function CommunityPage() {
           }
         )
         .subscribe();
+    };
 
-      return () => {
+    setupSubscription();
+
+    return () => {
+      if (subscription) {
         subscription.unsubscribe();
-      };
-    }
+      }
+    };
   }, [isLoggedIn]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !username || !isLoggedIn) return;
+    if (!newMessage.trim() || !username || !isLoggedIn) {
+      alert('Please enter a message');
+      return;
+    }
 
     setIsSending(true);
     try {
-      // Store both display name and actual user details
       const messageData = {
-        username: username, // Display name (can be changed by user)
+        username: username,
         message: newMessage.trim(),
-        user_full_name: userFullName, // Actual full name from login
-        user_usn: userUSN, // Actual USN from login
+        user_full_name: userFullName,
+        user_usn: userUSN,
         created_at: new Date().toISOString()
       };
 
       console.log('Sending message:', messageData);
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('community_messages')
-        .insert([messageData])
-        .select();
+        .insert([messageData]);
 
       if (error) {
-        console.error('Supabase error details:', error);
+        console.error('Supabase error:', error);
         
-        // If there are column errors, try with minimal fields
-        if (error.message.includes('column')) {
-          console.log('Retrying with minimal fields...');
-          const { data: retryData, error: retryError } = await supabase
-            .from('community_messages')
-            .insert([{
-              username: username,
-              message: newMessage.trim(),
-              created_at: new Date().toISOString()
-            }])
-            .select();
-            
-          if (retryError) throw retryError;
-        } else {
-          throw error;
+        // Try with minimal required fields
+        const minimalMessageData = {
+          username: username,
+          message: newMessage.trim(),
+          created_at: new Date().toISOString()
+        };
+        
+        const { error: minimalError } = await supabase
+          .from('community_messages')
+          .insert([minimalMessageData]);
+          
+        if (minimalError) {
+          throw minimalError;
         }
       }
       
@@ -173,14 +185,18 @@ export default function CommunityPage() {
 
   const formatMessageTime = (dateString) => {
     try {
+      if (!dateString) return 'Now';
+      
       const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Now';
+      
       const now = new Date();
-      const diffInMinutes = (now - date) / (1000 * 60);
+      const diffInMinutes = Math.floor((now - date) / (1000 * 60));
       
       if (diffInMinutes < 1) {
         return 'Now';
       } else if (diffInMinutes < 60) {
-        return `${Math.floor(diffInMinutes)}m`;
+        return `${diffInMinutes}m`;
       } else if (diffInMinutes < 1440) {
         return `${Math.floor(diffInMinutes / 60)}h`;
       } else {
@@ -204,22 +220,34 @@ export default function CommunityPage() {
   };
 
   const changeDisplayName = () => {
-    const newDisplayName = prompt('Enter display name:', username);
+    const newDisplayName = prompt('Enter display name:', username || 'User');
     if (newDisplayName && newDisplayName.trim()) {
       const trimmedName = newDisplayName.trim();
       setUsername(trimmedName);
+      localStorage.setItem('communityDisplayName', trimmedName);
     }
   };
 
-  // Get display name for a message - shows actual name if available, otherwise username
+  // Load saved display name from localStorage
+  useEffect(() => {
+    if (isLoggedIn) {
+      const savedDisplayName = localStorage.getItem('communityDisplayName');
+      if (savedDisplayName) {
+        setUsername(savedDisplayName);
+      } else if (userFullName) {
+        setUsername(userFullName);
+      }
+    }
+  }, [isLoggedIn, userFullName]);
+
   const getMessageDisplayName = (message) => {
-    return message.user_full_name || message.username;
+    return message.user_full_name || message.username || 'User';
   };
 
   // Show loading while checking authentication
   if (!isLoggedIn && isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-4 px-3 safe-area-bottom">
+      <div className="min-h-screen bg-gray-50 py-4 px-3">
         <div className="max-w-4xl mx-auto">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -233,7 +261,7 @@ export default function CommunityPage() {
   // Don't render if not logged in
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gray-50 py-4 px-3 safe-area-bottom">
+      <div className="min-h-screen bg-gray-50 py-4 px-3">
         <div className="max-w-4xl mx-auto">
           <div className="text-center py-12">
             <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -255,7 +283,7 @@ export default function CommunityPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-4 px-3 safe-area-bottom">
+      <div className="min-h-screen bg-gray-50 py-4 px-3">
         <div className="max-w-4xl mx-auto">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -267,7 +295,7 @@ export default function CommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-4 px-3 safe-area-bottom">
+    <div className="min-h-screen bg-gray-50 py-4 px-3">
       <div className="max-w-4xl mx-auto">
         {/* Header - Mobile Optimized */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-3">
@@ -278,15 +306,15 @@ export default function CommunityPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="text-lg font-bold text-gray-900 truncate">Community Chat</h1>
-                <p className="text-gray-600 text-xs truncate">Welcome, {userFullName}!</p>
+                <p className="text-gray-600 text-xs truncate">Welcome, {userFullName || 'User'}!</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="text-right hidden xs:block">
+              <div className="text-right hidden sm:block">
                 <div className="text-xs text-gray-600">Logged in as</div>
                 <div className="flex items-center space-x-1">
                   <span className="font-medium text-green-600 text-xs">
-                    {userFullName}
+                    {userFullName || 'User'}
                   </span>
                   <button
                     onClick={changeDisplayName}
@@ -335,7 +363,7 @@ export default function CommunityPage() {
                 
                 return (
                   <div
-                    key={message.id}
+                    key={message.id || message.created_at}
                     className={`flex space-x-2 ${
                       isCurrentUser ? 'justify-end' : 'justify-start'
                     }`}
@@ -415,8 +443,8 @@ export default function CommunityPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Message Input - Fixed Styling */}
-          <div className="border-t border-gray-200 p-3 safe-area-padding bg-white">
+          {/* Message Input */}
+          <div className="border-t border-gray-200 p-3 bg-white">
             <div className="flex space-x-2 items-end">
               <div className="flex-1 min-w-0">
                 <textarea
@@ -447,12 +475,12 @@ export default function CommunityPage() {
             </div>
             <div className="mt-2 text-xs text-gray-500 text-center">
               {messages.length} message{messages.length !== 1 ? 's' : ''}
-              <span className="ml-2">• Displaying as: {username}</span>
+              <span className="ml-2">• Displaying as: {username || 'User'}</span>
             </div>
           </div>
         </div>
 
-        {/* Community Guidelines - Mobile Optimized */}
+        {/* Community Guidelines */}
         <div className="mt-4 bg-blue-50 rounded-lg p-3 border border-blue-200">
           <h3 className="font-semibold text-blue-900 text-sm mb-2">Community Guidelines</h3>
           <ul className="text-xs text-blue-800 space-y-1">
@@ -464,33 +492,6 @@ export default function CommunityPage() {
           </ul>
         </div>
       </div>
-
-      {/* Mobile-specific CSS for safe areas */}
-      <style jsx>{`
-        .safe-area-bottom {
-          padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-        }
-        .safe-area-padding {
-          padding-left: calc(0.75rem + env(safe-area-inset-left, 0px));
-          padding-right: calc(0.75rem + env(safe-area-inset-right, 0px));
-        }
-        
-        /* Custom scrollbar for mobile */
-        .overflow-y-auto {
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-        }
-        .overflow-y-auto::-webkit-scrollbar {
-          display: none;
-        }
-        
-        /* Prevent zoom on input focus for iOS */
-        @media screen and (max-width: 768px) {
-          textarea {
-            font-size: 16px; /* Prevents zoom on iOS */
-          }
-        }
-      `}</style>
     </div>
   );
 }

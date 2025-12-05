@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API_BASE } from './lib/constant';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   MapPin, Navigation, Menu, Bell, Megaphone, Info, User, 
   BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, 
-  X, ChevronLeft, MessageSquare, Home
+  X, ChevronLeft, MessageSquare, Home, Shield, Clock,
+  Download, AlertCircle, CheckCircle, ExternalLink
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,6 +17,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+// Current app version (hardcoded for now, will be compared with DB)
+const CURRENT_APP_VERSION = "2.1.0";
 
 // Bus Card Component
 function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
@@ -182,7 +187,10 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Next Stop:</span>
+            <span className="text-gray-600 flex items-center">
+              <Clock size={14} className="mr-2" />
+              Next Stop:
+            </span>
             <span className="font-semibold text-blue-600 text-xs max-w-[120px] truncate">
               {nextStop?.stop_name || "Route End"}
             </span>
@@ -227,6 +235,13 @@ export default function ClientHome({ busesWithLocations }) {
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  
+  // Version state
+  const [appVersion, setAppVersion] = useState(CURRENT_APP_VERSION);
+  const [latestVersion, setLatestVersion] = useState(null);
+  const [updateData, setUpdateData] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isUpdateRequired, setIsUpdateRequired] = useState(false);
 
   // Detect mobile device
   useEffect(() => {
@@ -239,6 +254,60 @@ export default function ClientHome({ busesWithLocations }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Fetch latest app version from Supabase
+  useEffect(() => {
+    async function fetchLatestVersion() {
+      try {
+        const { data, error } = await supabase
+          .from('app_updates')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (error) {
+          console.error('Error fetching app version:', error);
+          return;
+        }
+
+        if (data) {
+          setLatestVersion(data.version);
+          setUpdateData(data);
+          
+          // Check if update is needed
+          const currentV = CURRENT_APP_VERSION.split('.').map(Number);
+          const latestV = data.version.split('.').map(Number);
+          
+          let needsUpdate = false;
+          let updateRequired = data.force_update || false;
+          
+          // Simple version comparison
+          for (let i = 0; i < Math.max(currentV.length, latestV.length); i++) {
+            const curr = currentV[i] || 0;
+            const latest = latestV[i] || 0;
+            
+            if (latest > curr) {
+              needsUpdate = true;
+              break;
+            } else if (latest < curr) {
+              break;
+            }
+          }
+          
+          if (needsUpdate) {
+            setIsUpdateRequired(updateRequired);
+            setShowUpdateModal(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error in version check:', error);
+      }
+    }
+
+    fetchLatestVersion();
+  }, []);
+
+  // Check for existing user session
   useEffect(() => {
     const savedUser = localStorage.getItem('sitBusUser');
     if (savedUser) {
@@ -272,7 +341,7 @@ export default function ClientHome({ busesWithLocations }) {
 
   // Prevent body scroll when modal is open
   useEffect(() => {
-    if (showMobileMenu || showMapModal || showLoginModal) {
+    if (showMobileMenu || showMapModal || showLoginModal || showUpdateModal) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -281,7 +350,7 @@ export default function ClientHome({ busesWithLocations }) {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [showMobileMenu, showMapModal, showLoginModal]);
+  }, [showMobileMenu, showMapModal, showLoginModal, showUpdateModal]);
 
   const handleTrackBus = (bus, coordinates) => {
     setSelectedBus(bus);
@@ -305,27 +374,28 @@ export default function ClientHome({ busesWithLocations }) {
       password: formData.get('password')
     };
 
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-      });
+   try {
+  const response = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials),
+  });
 
-      const result = await response.json();
+  const result = await response.json();
 
-      if (!response.ok) throw new Error(result.error);
+  if (!response.ok) throw new Error(result.message);
 
-      setCurrentUser(result.data);
-      setIsLoggedIn(true);
-      localStorage.setItem('sitBusUser', JSON.stringify(result.data));
-      setShowLoginModal(false);
-      setShowMobileMenu(false);
-      alert('Login successful! Welcome ' + result.data.full_name);
-      e.target.reset();
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
+  setCurrentUser(result.data);
+  setIsLoggedIn(true);
+  localStorage.setItem('sitBusUser', JSON.stringify(result.data));
+  setShowLoginModal(false);
+  setShowMobileMenu(false);
+  alert('Login successful! Welcome ' + result.data.full_name);
+  e.target.reset();
+
+} catch (err) {
+  alert('Error: ' + err.message);
+}
   };
 
   const handleRegister = async (e) => {
@@ -369,8 +439,92 @@ export default function ClientHome({ busesWithLocations }) {
     alert('Logged out successfully');
   };
 
+  const handleUpdateNow = () => {
+    if (updateData?.download_url) {
+      window.open(updateData.download_url, '_blank');
+    }
+  };
+
+  const handleSkipUpdate = () => {
+    if (!isUpdateRequired) {
+      setShowUpdateModal(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col safe-area-inset">
+      {/* Update Notification Modal */}
+      {showUpdateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 safe-area-inset">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl relative animate-scale-in">
+            <div className={`p-6 rounded-t-2xl ${isUpdateRequired ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-blue-500 to-indigo-600'} text-white`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                  {isUpdateRequired ? (
+                    <AlertCircle size={24} className="text-white" />
+                  ) : (
+                    <Download size={24} className="text-white" />
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold">Update Available</h2>
+                  <p className="text-white/90">Version {latestVersion} is available</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              {updateData && (
+                <div className="mb-6">
+                  <h3 className="font-bold text-gray-900 text-lg mb-2">{updateData.title || `What's New in v${latestVersion}`}</h3>
+                  <p className="text-gray-600 mb-4">{updateData.description || 'Bug fixes and performance improvements'}</p>
+                  
+                  <div className="bg-gray-50 p-4 rounded-xl mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-gray-700">Current Version</span>
+                      <span className="font-semibold text-gray-900">{CURRENT_APP_VERSION}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700">Latest Version</span>
+                      <span className="font-bold text-blue-600">{latestVersion}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleUpdateNow}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 px-4 rounded-xl font-bold hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  <Download size={18} />
+                  Update Now
+                  <ExternalLink size={16} />
+                </button>
+                
+                {!isUpdateRequired && (
+                  <button
+                    onClick={handleSkipUpdate}
+                    className="flex-1 bg-gradient-to-r from-gray-300 to-gray-400 text-gray-700 py-3.5 px-4 rounded-xl font-bold hover:from-gray-400 hover:to-gray-500 transition-all shadow-sm"
+                  >
+                    Skip for Now
+                  </button>
+                )}
+              </div>
+              
+              {isUpdateRequired && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={16} className="text-red-600" />
+                    <p className="text-sm text-red-700 font-medium">This update is required to continue using the app.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Enhanced Fixed Navigation Header */}
       <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 safe-area-top">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -393,7 +547,12 @@ export default function ClientHome({ busesWithLocations }) {
               </div>
               <div className="block">
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">SIT Bus</h1>
-                <p className="text-xs text-gray-500 hidden sm:block">Tracking System</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs text-gray-500 hidden sm:block">v{CURRENT_APP_VERSION}</p>
+                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -448,7 +607,7 @@ export default function ClientHome({ busesWithLocations }) {
               )}
             </div>
 
-            {/* Enhanced Mobile Menu Button */}
+            {/* FIXED: Enhanced Mobile Menu Button - No update button, with proper background */}
             <div className="md:hidden flex items-center space-x-2">
               {isLoggedIn && (
                 <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium max-w-[100px] truncate">
@@ -460,7 +619,11 @@ export default function ClientHome({ busesWithLocations }) {
                   console.log('Menu button clicked');
                   setShowMobileMenu(!showMobileMenu);
                 }}
-                className="mobile-menu-button text-gray-700 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+                className={`mobile-menu-button p-2 rounded-lg touch-manipulation transition-all duration-200 ${
+                  showMobileMenu 
+                    ? 'bg-blue-100 text-blue-600' 
+                    : 'text-gray-700 hover:text-blue-600 hover:bg-gray-100'
+                }`}
                 aria-label="Toggle menu"
               >
                 {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
@@ -469,56 +632,71 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </div>
 
-        {/* Enhanced Mobile Navigation Menu - FIXED VERSION */}
-       {/* Enhanced Mobile Navigation Menu - WITH BACKGROUND FIX */}
+        {/* FIXED: Mobile Menu - White Background */}
+      {/* FIXED: Mobile Menu - White Background */}
 {showMobileMenu && (
-  <div className="md:hidden fixed inset-0 top-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowMobileMenu(false)}>
-    <div className="absolute top-0 right-0 h-full w-3/4 max-w-xs bg-white shadow-2xl mobile-menu" onClick={(e) => e.stopPropagation()}>
-      {/* Mobile Menu Header */}
+  <div className="md:hidden fixed inset-0 z-50">
+    {/* Backdrop */}
+    <div 
+      className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      onClick={() => setShowMobileMenu(false)}
+    />
+    
+    {/* Menu Panel - SOLID WHITE BACKGROUND */}
+    <div className="absolute inset-0 bg-white mobile-menu" onClick={(e) => e.stopPropagation()}>
+      {/* Mobile Menu Header - ALSO WHITE */}
       <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
             <Navigation size={18} className="text-white" />
           </div>
-          <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
+          <div>
+            <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-gray-500">v{CURRENT_APP_VERSION}</p>
+              {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
+              )}
+            </div>
+          </div>
         </div>
         <button 
           onClick={() => setShowMobileMenu(false)}
-          className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation"
+          className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation text-gray-700"
           aria-label="Close menu"
         >
-          <X size={20} className="text-gray-700" />
+          <X size={20} />
         </button>
       </div>
 
-      {/* Scrollable Menu Content */}
-      <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 safe-area-inset bg-gradient-to-b from-white to-gray-50">
-        <nav className="flex flex-col space-y-1">
-          {/* Home Link */}
+      {/* Scrollable Menu Content - WHITE BACKGROUND */}
+      <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 safe-area-inset bg-white">
+        <nav className="flex flex-col space-y-2">
+          {/* Home Link - LIGHT GRAY BACKGROUND */}
           <Link 
             href="/"
             onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-blue-50 text-left flex items-center border border-gray-100 hover:border-blue-200 shadow-sm"
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
           >
             <Home size={20} className="mr-3 text-blue-600" />
             <span className="font-semibold">Home</span>
           </Link>
 
-          {/* Notice Link */}
+          {/* Notice Link - LIGHT GRAY BACKGROUND */}
           <Link 
             href="/notice"
             onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-orange-50 text-left flex items-center border border-gray-100 hover:border-orange-200 shadow-sm"
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-orange-50 text-left flex items-center border border-gray-200 hover:border-orange-200 shadow-sm"
           >
             <Bell size={20} className="mr-3 text-orange-600" />
             <span className="font-semibold">Notice</span>
           </Link>
 
-          {/* Conditional Links */}
+          {/* Conditional Links - LIGHT GRAY BACKGROUND */}
           <Link 
             href="/announcements"
             onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-green-50 border-gray-100 hover:border-green-200'}`}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-green-50 border-gray-200 hover:border-green-200'}`}
           >
             <Megaphone size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-green-600'}`} />
             <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Announcements</span>
@@ -527,7 +705,7 @@ export default function ClientHome({ busesWithLocations }) {
           <Link 
             href="/community"
             onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-purple-50 border-gray-100 hover:border-purple-200'}`}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-purple-50 border-gray-200 hover:border-purple-200'}`}
           >
             <Users size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-purple-600'}`} />
             <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Community</span>
@@ -536,7 +714,7 @@ export default function ClientHome({ busesWithLocations }) {
           <Link 
             href="/complaint"
             onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-white hover:bg-red-50 border-gray-100 hover:border-red-200'}`}
+            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-red-50 border-gray-200 hover:border-red-200'}`}
           >
             <AlertTriangle size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-red-600'}`} />
             <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
@@ -545,17 +723,39 @@ export default function ClientHome({ busesWithLocations }) {
           <Link 
             href="/help"
             onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-white hover:bg-blue-50 text-left flex items-center border border-gray-100 hover:border-blue-200 shadow-sm"
+            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
           >
             <Info size={20} className="mr-3 text-blue-600" />
             <span className="font-semibold">Help</span>
           </Link>
 
-          {/* Auth Section */}
+          {/* Update Notification - LIGHT RED BACKGROUND */}
+          {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+            <div 
+              onClick={() => {
+                setShowMobileMenu(false);
+                setShowUpdateModal(true);
+              }}
+              className="cursor-pointer mt-4 px-4 py-4 bg-gradient-to-r from-red-50 to-rose-100 rounded-xl border border-red-200 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 flex items-center justify-center">
+                  <Download size={20} className="text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-gray-900">Update Available!</p>
+                  <p className="text-sm text-gray-600">Version {latestVersion} is ready</p>
+                </div>
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+          )}
+
+          {/* Auth Section - LIGHT COLORED BACKGROUNDS */}
           <div className="pt-8 border-t border-gray-200 mt-4 space-y-4">
             {isLoggedIn ? (
               <>
-                {/* User Info Card */}
+                {/* User Info Card - LIGHT GREEN BACKGROUND */}
                 <div className="px-4 py-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm">
                   <div className="flex items-center mb-3">
                     <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
@@ -593,22 +793,41 @@ export default function ClientHome({ busesWithLocations }) {
             )}
           </div>
 
-          {/* Footer Links */}
-          <div className="pt-4 mt-4 border-t border-gray-200">
-            <div className="grid grid-cols-2 gap-2">
+          {/* Version and Info Section - WHITE BACKGROUND */}
+          <div className="pt-8 border-t border-gray-200 mt-4 space-y-3">
+            <div className="text-center">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full mb-2">
+                <Shield size={14} className="text-blue-600" />
+                <span className="text-xs text-blue-600 font-medium">Secure Connection</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                SIT Bus Tracker v{CURRENT_APP_VERSION}
+              </p>
+              {latestVersion && (
+                <p className="text-xs text-gray-400 mb-1">
+                  Latest: v{latestVersion}
+                </p>
+              )}
+              <p className="text-xs text-gray-400">
+                shetty group of institutions
+              </p>
+            </div>
+            
+            {/* Footer Links */}
+            <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200">
               <Link 
                 href="/privacy"
                 onClick={() => setShowMobileMenu(false)}
                 className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
               >
-                Privacy
+                Privacy Policy
               </Link>
               <Link 
                 href="/terms"
                 onClick={() => setShowMobileMenu(false)}
                 className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
               >
-                Terms
+                Terms of Service
               </Link>
             </div>
           </div>
@@ -930,6 +1149,21 @@ export default function ClientHome({ busesWithLocations }) {
                 <p className="text-base md:text-lg text-white max-w-2xl mx-auto leading-relaxed font-light opacity-95">
                   Real-time bus tracking & smart campus transportation
                 </p>
+                <div className="flex items-center justify-center gap-2 mt-2">
+                  <p className="text-sm text-blue-200">Version {CURRENT_APP_VERSION}</p>
+                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                    <>
+                      <span className="text-gray-300">•</span>
+                      <button 
+                        onClick={() => setShowUpdateModal(true)}
+                        className="text-sm text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
+                      >
+                        <Download size={12} />
+                        Update to v{latestVersion}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-center items-center gap-4 md:gap-6 mb-6">
@@ -942,7 +1176,7 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
                 <div className="text-center">
-                  <div className="text-lg md:text-xl font-bold text-white">new</div>
+                  <div className="text-lg md:text-xl font-bold text-white">{busesWithLocations?.length || 0}</div>
                   <div className="text-xs md:text-sm text-white opacity-90">Buses</div>
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
@@ -1021,7 +1255,7 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </section>
 
-        {/* Footer */}
+        {/* Footer with Version */}
         <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4 safe-area-bottom">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
@@ -1043,7 +1277,18 @@ export default function ClientHome({ busesWithLocations }) {
                   </div>
                   <div>
                     <h3 className="text-xl font-bold">SIT Bus System</h3>
-                    <p className="text-gray-400 text-sm">Smart Campus Transit</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-gray-400 text-sm">v{CURRENT_APP_VERSION}</p>
+                      {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                        <button 
+                          onClick={() => setShowUpdateModal(true)}
+                          className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-2 py-0.5 rounded-full flex items-center gap-1"
+                        >
+                          <Download size={10} />
+                          Update
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <p className="text-gray-400 mb-6 max-w-md text-base leading-relaxed">
@@ -1105,16 +1350,28 @@ export default function ClientHome({ busesWithLocations }) {
 
             <div className="border-t border-gray-800 pt-8">
               <div className="flex flex-col md:flex-row justify-between items-center">
-                <p className="text-gray-400 text-sm text-center md:text-left mb-4 md:mb-0">
-                  © 2024 SIT Bus System. All rights reserved.
-                </p>
-                <div className="flex space-x-6">
+                <div className="text-center md:text-left mb-4 md:mb-0">
+                  <p className="text-gray-400 text-sm">
+                    © 2024 SIT Bus System. All rights reserved.
+                  </p>
+                  <div className="flex items-center justify-center md:justify-start gap-2 mt-2">
+                    <div className={`w-2 h-2 rounded-full ${latestVersion && latestVersion !== CURRENT_APP_VERSION ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                    <p className="text-xs text-gray-500">
+                      Version {CURRENT_APP_VERSION} • 
+                      {latestVersion && latestVersion !== CURRENT_APP_VERSION ? ' Update Available' : ' Up to Date'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex space-x-6 items-center">
                   <Link href="/privacy" className="text-gray-400 hover:text-white text-sm transition-colors">
                     Privacy Policy
                   </Link>
                   <Link href="/terms" className="text-gray-400 hover:text-white text-sm transition-colors">
                     Terms of Service
                   </Link>
+                  <div className="text-gray-500 text-sm">
+                    v{CURRENT_APP_VERSION}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1145,6 +1402,21 @@ export default function ClientHome({ busesWithLocations }) {
           }
           to {
             transform: translateX(0);
+          }
+        }
+        
+        .animate-scale-in {
+          animation: scaleIn 0.2s ease-out;
+        }
+        
+        @keyframes scaleIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
           }
         }
       `}</style>

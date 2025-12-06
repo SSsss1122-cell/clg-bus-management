@@ -2,6 +2,7 @@
 import { supabase } from './lib/supabase';
 import ClientHome from './client-home';
 
+
 export default async function Home() {
   // Fetch buses with their latest locations
   const { data: buses, error } = await supabase

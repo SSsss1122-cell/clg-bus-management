@@ -235,6 +235,7 @@ export default function ClientHome({ busesWithLocations }) {
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [isAndroidWebView, setIsAndroidWebView] = useState(false);
   
   // Version state
   const [appVersion, setAppVersion] = useState(CURRENT_APP_VERSION);
@@ -243,10 +244,49 @@ export default function ClientHome({ busesWithLocations }) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdateRequired, setIsUpdateRequired] = useState(false);
 
+  // Check if running in Android WebView
+  useEffect(() => {
+    const checkAndroidWebView = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isAndroidWV = userAgent.includes('android') && userAgent.includes('wv');
+      setIsAndroidWebView(isAndroidWV);
+      
+      // Apply specific fixes for Android WebView
+      if (isAndroidWV) {
+        // Force dark mode support
+        document.documentElement.style.setProperty('--safe-area-top', '24px');
+        document.documentElement.style.setProperty('--safe-area-bottom', '16px');
+        document.documentElement.style.setProperty('--safe-area-left', '0px');
+        document.documentElement.style.setProperty('--safe-area-right', '0px');
+        
+        // Fix for status bar overlap
+        const meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+        document.head.appendChild(meta);
+      }
+    };
+    
+    checkAndroidWebView();
+  }, []);
+
   // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      
+      // Additional fixes for mobile
+      if (mobile) {
+        // Prevent zoom on focus
+        document.addEventListener('focusin', (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            window.requestAnimationFrame(() => {
+              e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+          }
+        });
+      }
     };
     
     checkMobile();
@@ -343,14 +383,24 @@ export default function ClientHome({ busesWithLocations }) {
   useEffect(() => {
     if (showMobileMenu || showMapModal || showLoginModal || showUpdateModal) {
       document.body.style.overflow = 'hidden';
+      // Fix for Android WebView scrolling issues
+      if (isAndroidWebView) {
+        document.documentElement.style.overflow = 'hidden';
+      }
     } else {
       document.body.style.overflow = 'unset';
+      if (isAndroidWebView) {
+        document.documentElement.style.overflow = 'unset';
+      }
     }
     
     return () => {
       document.body.style.overflow = 'unset';
+      if (isAndroidWebView) {
+        document.documentElement.style.overflow = 'unset';
+      }
     };
-  }, [showMobileMenu, showMapModal, showLoginModal, showUpdateModal]);
+  }, [showMobileMenu, showMapModal, showLoginModal, showUpdateModal, isAndroidWebView]);
 
   const handleTrackBus = (bus, coordinates) => {
     setSelectedBus(bus);
@@ -374,28 +424,28 @@ export default function ClientHome({ busesWithLocations }) {
       password: formData.get('password')
     };
 
-   try {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(credentials),
-  });
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      });
 
-  const result = await response.json();
+      const result = await response.json();
 
-  if (!response.ok) throw new Error(result.message);
+      if (!response.ok) throw new Error(result.message);
 
-  setCurrentUser(result.data);
-  setIsLoggedIn(true);
-  localStorage.setItem('sitBusUser', JSON.stringify(result.data));
-  setShowLoginModal(false);
-  setShowMobileMenu(false);
-  alert('Login successful! Welcome ' + result.data.full_name);
-  e.target.reset();
+      setCurrentUser(result.data);
+      setIsLoggedIn(true);
+      localStorage.setItem('sitBusUser', JSON.stringify(result.data));
+      setShowLoginModal(false);
+      setShowMobileMenu(false);
+      alert('Login successful! Welcome ' + result.data.full_name);
+      e.target.reset();
 
-} catch (err) {
-  alert('Error: ' + err.message);
-}
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
 
   const handleRegister = async (e) => {
@@ -452,10 +502,10 @@ export default function ClientHome({ busesWithLocations }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col safe-area-inset">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col android-safe-area">
       {/* Update Notification Modal */}
       {showUpdateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 safe-area-inset">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 android-modal-safe">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl relative animate-scale-in">
             <div className={`p-6 rounded-t-2xl ${isUpdateRequired ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-blue-500 to-indigo-600'} text-white`}>
               <div className="flex items-center gap-3 mb-4">
@@ -495,7 +545,7 @@ export default function ClientHome({ busesWithLocations }) {
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={handleUpdateNow}
-                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 px-4 rounded-xl font-bold hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 px-4 rounded-xl font-bold hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 touch-manipulation"
                 >
                   <Download size={18} />
                   Update Now
@@ -505,7 +555,7 @@ export default function ClientHome({ busesWithLocations }) {
                 {!isUpdateRequired && (
                   <button
                     onClick={handleSkipUpdate}
-                    className="flex-1 bg-gradient-to-r from-gray-300 to-gray-400 text-gray-700 py-3.5 px-4 rounded-xl font-bold hover:from-gray-400 hover:to-gray-500 transition-all shadow-sm"
+                    className="flex-1 bg-gradient-to-r from-gray-300 to-gray-400 text-gray-700 py-3.5 px-4 rounded-xl font-bold hover:from-gray-400 hover:to-gray-500 transition-all shadow-sm touch-manipulation"
                   >
                     Skip for Now
                   </button>
@@ -525,8 +575,10 @@ export default function ClientHome({ busesWithLocations }) {
         </div>
       )}
 
-      {/* Enhanced Fixed Navigation Header */}
-      <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 safe-area-top">
+      {/* Enhanced Fixed Navigation Header - Android WebView Compatible */}
+      <header className={`bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        isAndroidWebView ? 'pt-6' : 'pt-safe-top'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo and Name */}
@@ -607,7 +659,7 @@ export default function ClientHome({ busesWithLocations }) {
               )}
             </div>
 
-            {/* FIXED: Enhanced Mobile Menu Button - No update button, with proper background */}
+            {/* Mobile Menu Button */}
             <div className="md:hidden flex items-center space-x-2">
               {isLoggedIn && (
                 <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium max-w-[100px] truncate">
@@ -615,10 +667,7 @@ export default function ClientHome({ busesWithLocations }) {
                 </div>
               )}
               <button 
-                onClick={() => {
-                  console.log('Menu button clicked');
-                  setShowMobileMenu(!showMobileMenu);
-                }}
+                onClick={() => setShowMobileMenu(!showMobileMenu)}
                 className={`mobile-menu-button p-2 rounded-lg touch-manipulation transition-all duration-200 ${
                   showMobileMenu 
                     ? 'bg-blue-100 text-blue-600' 
@@ -632,218 +681,217 @@ export default function ClientHome({ busesWithLocations }) {
           </div>
         </div>
 
-        {/* FIXED: Mobile Menu - White Background */}
-      {/* FIXED: Mobile Menu - White Background */}
-{showMobileMenu && (
-  <div className="md:hidden fixed inset-0 z-50">
-    {/* Backdrop */}
-    <div 
-      className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      onClick={() => setShowMobileMenu(false)}
-    />
-    
-    {/* Menu Panel - SOLID WHITE BACKGROUND */}
-    <div className="absolute inset-0 bg-white mobile-menu" onClick={(e) => e.stopPropagation()}>
-      {/* Mobile Menu Header - ALSO WHITE */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-            <Navigation size={18} className="text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
-            <div className="flex items-center gap-1">
-              <p className="text-xs text-gray-500">v{CURRENT_APP_VERSION}</p>
-              {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
-              )}
-            </div>
-          </div>
-        </div>
-        <button 
-          onClick={() => setShowMobileMenu(false)}
-          className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation text-gray-700"
-          aria-label="Close menu"
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* Scrollable Menu Content - WHITE BACKGROUND */}
-      <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 safe-area-inset bg-white">
-        <nav className="flex flex-col space-y-2">
-          {/* Home Link - LIGHT GRAY BACKGROUND */}
-          <Link 
-            href="/"
-            onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
-          >
-            <Home size={20} className="mr-3 text-blue-600" />
-            <span className="font-semibold">Home</span>
-          </Link>
-
-          {/* Notice Link - LIGHT GRAY BACKGROUND */}
-          <Link 
-            href="/notice"
-            onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-orange-50 text-left flex items-center border border-gray-200 hover:border-orange-200 shadow-sm"
-          >
-            <Bell size={20} className="mr-3 text-orange-600" />
-            <span className="font-semibold">Notice</span>
-          </Link>
-
-          {/* Conditional Links - LIGHT GRAY BACKGROUND */}
-          <Link 
-            href="/announcements"
-            onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-green-50 border-gray-200 hover:border-green-200'}`}
-          >
-            <Megaphone size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-green-600'}`} />
-            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Announcements</span>
-          </Link>
-
-          <Link 
-            href="/community"
-            onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-purple-50 border-gray-200 hover:border-purple-200'}`}
-          >
-            <Users size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-purple-600'}`} />
-            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Community</span>
-          </Link>
-
-          <Link 
-            href="/complaint"
-            onClick={() => setShowMobileMenu(false)}
-            className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-red-50 border-gray-200 hover:border-red-200'}`}
-          >
-            <AlertTriangle size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-red-600'}`} />
-            <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
-          </Link>
-
-          <Link 
-            href="/help"
-            onClick={() => setShowMobileMenu(false)}
-            className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
-          >
-            <Info size={20} className="mr-3 text-blue-600" />
-            <span className="font-semibold">Help</span>
-          </Link>
-
-          {/* Update Notification - LIGHT RED BACKGROUND */}
-          {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+        {/* Mobile Menu */}
+        {showMobileMenu && (
+          <div className="md:hidden fixed inset-0 z-50">
+            {/* Backdrop */}
             <div 
-              onClick={() => {
-                setShowMobileMenu(false);
-                setShowUpdateModal(true);
-              }}
-              className="cursor-pointer mt-4 px-4 py-4 bg-gradient-to-r from-red-50 to-rose-100 rounded-xl border border-red-200 shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 flex items-center justify-center">
-                  <Download size={20} className="text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-gray-900">Update Available!</p>
-                  <p className="text-sm text-gray-600">Version {latestVersion} is ready</p>
-                </div>
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              </div>
-            </div>
-          )}
-
-          {/* Auth Section - LIGHT COLORED BACKGROUNDS */}
-          <div className="pt-8 border-t border-gray-200 mt-4 space-y-4">
-            {isLoggedIn ? (
-              <>
-                {/* User Info Card - LIGHT GREEN BACKGROUND */}
-                <div className="px-4 py-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm">
-                  <div className="flex items-center mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
-                      <User size={18} className="text-white" />
-                    </div>
-                    <div className="ml-3">
-                      <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
-                      <p className="text-xs text-gray-600 truncate">{currentUser?.usn}</p>
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowMobileMenu(false)}
+            />
+            
+            {/* Menu Panel */}
+            <div className="absolute inset-0 bg-white mobile-menu" onClick={(e) => e.stopPropagation()}>
+              {/* Mobile Menu Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                    <Navigation size={18} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
+                    <div className="flex items-center gap-1">
+                      <p className="text-xs text-gray-500">v{CURRENT_APP_VERSION}</p>
+                      {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
+                      )}
                     </div>
                   </div>
-                  <button 
-                    onClick={() => {
-                      setShowMobileMenu(false);
-                      handleLogout();
-                    }}
-                    className="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-red-600 hover:to-rose-700 transition-all shadow-sm text-center touch-manipulation"
-                  >
-                    Logout
-                  </button>
                 </div>
-              </>
-            ) : (
-              <div className="px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm">
-                <p className="text-gray-700 mb-4 text-sm font-medium text-center">Login to access all features</p>
                 <button 
-                  onClick={() => {
-                    setShowMobileMenu(false);
-                    setShowLoginModal(true);
-                  }}
-                  className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl text-center touch-manipulation"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="p-2 rounded-lg hover:bg-gray-100 touch-manipulation text-gray-700"
+                  aria-label="Close menu"
                 >
-                  Login / Register
+                  <X size={20} />
                 </button>
               </div>
-            )}
-          </div>
 
-          {/* Version and Info Section - WHITE BACKGROUND */}
-          <div className="pt-8 border-t border-gray-200 mt-4 space-y-3">
-            <div className="text-center">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full mb-2">
-                <Shield size={14} className="text-blue-600" />
-                <span className="text-xs text-blue-600 font-medium">Secure Connection</span>
+              {/* Scrollable Menu Content */}
+              <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 android-menu-safe bg-white">
+                <nav className="flex flex-col space-y-2">
+                  {/* Home Link */}
+                  <Link 
+                    href="/"
+                    onClick={() => setShowMobileMenu(false)}
+                    className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
+                  >
+                    <Home size={20} className="mr-3 text-blue-600" />
+                    <span className="font-semibold">Home</span>
+                  </Link>
+
+                  {/* Notice Link */}
+                  <Link 
+                    href="/notice"
+                    onClick={() => setShowMobileMenu(false)}
+                    className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-orange-50 text-left flex items-center border border-gray-200 hover:border-orange-200 shadow-sm"
+                  >
+                    <Bell size={20} className="mr-3 text-orange-600" />
+                    <span className="font-semibold">Notice</span>
+                  </Link>
+
+                  {/* Conditional Links */}
+                  <Link 
+                    href="/announcements"
+                    onClick={() => setShowMobileMenu(false)}
+                    className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-green-50 border-gray-200 hover:border-green-200'}`}
+                  >
+                    <Megaphone size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-green-600'}`} />
+                    <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Announcements</span>
+                  </Link>
+
+                  <Link 
+                    href="/community"
+                    onClick={() => setShowMobileMenu(false)}
+                    className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-purple-50 border-gray-200 hover:border-purple-200'}`}
+                  >
+                    <Users size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-purple-600'}`} />
+                    <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Community</span>
+                  </Link>
+
+                  <Link 
+                    href="/complaint"
+                    onClick={() => setShowMobileMenu(false)}
+                    className={`text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl text-left flex items-center border shadow-sm ${!isLoggedIn ? 'opacity-50 pointer-events-none bg-gray-100 border-gray-200' : 'bg-gray-50 hover:bg-red-50 border-gray-200 hover:border-red-200'}`}
+                  >
+                    <AlertTriangle size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-red-600'}`} />
+                    <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
+                  </Link>
+
+                  <Link 
+                    href="/help"
+                    onClick={() => setShowMobileMenu(false)}
+                    className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
+                  >
+                    <Info size={20} className="mr-3 text-blue-600" />
+                    <span className="font-semibold">Help</span>
+                  </Link>
+
+                  {/* Update Notification */}
+                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
+                    <div 
+                      onClick={() => {
+                        setShowMobileMenu(false);
+                        setShowUpdateModal(true);
+                      }}
+                      className="cursor-pointer mt-4 px-4 py-4 bg-gradient-to-r from-red-50 to-rose-100 rounded-xl border border-red-200 shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 flex items-center justify-center">
+                          <Download size={20} className="text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-bold text-gray-900">Update Available!</p>
+                          <p className="text-sm text-gray-600">Version {latestVersion} is ready</p>
+                        </div>
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Auth Section */}
+                  <div className="pt-8 border-t border-gray-200 mt-4 space-y-4">
+                    {isLoggedIn ? (
+                      <>
+                        {/* User Info Card */}
+                        <div className="px-4 py-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm">
+                          <div className="flex items-center mb-3">
+                            <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center">
+                              <User size={18} className="text-white" />
+                            </div>
+                            <div className="ml-3">
+                              <p className="font-semibold text-gray-900 truncate">{currentUser?.full_name}</p>
+                              <p className="text-xs text-gray-600 truncate">{currentUser?.usn}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              setShowMobileMenu(false);
+                              handleLogout();
+                            }}
+                            className="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-red-600 hover:to-rose-700 transition-all shadow-sm text-center touch-manipulation"
+                          >
+                            Logout
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm">
+                        <p className="text-gray-700 mb-4 text-sm font-medium text-center">Login to access all features</p>
+                        <button 
+                          onClick={() => {
+                            setShowMobileMenu(false);
+                            setShowLoginModal(true);
+                          }}
+                          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl text-center touch-manipulation"
+                        >
+                          Login / Register
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Version and Info Section */}
+                  <div className="pt-8 border-t border-gray-200 mt-4 space-y-3">
+                    <div className="text-center">
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full mb-2">
+                        <Shield size={14} className="text-blue-600" />
+                        <span className="text-xs text-blue-600 font-medium">Secure Connection</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-2">
+                        SIT Bus Tracker v{CURRENT_APP_VERSION}
+                      </p>
+                      {latestVersion && (
+                        <p className="text-xs text-gray-400 mb-1">
+                          Latest: v{latestVersion}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400">
+                        shetty group of institutions
+                      </p>
+                    </div>
+                    
+                    {/* Footer Links */}
+                    <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200">
+                      <Link 
+                        href="/privacy"
+                        onClick={() => setShowMobileMenu(false)}
+                        className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        Privacy Policy
+                      </Link>
+                      <Link 
+                        href="/terms"
+                        onClick={() => setShowMobileMenu(false)}
+                        className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
+                      >
+                        Terms of Service
+                      </Link>
+                    </div>
+                  </div>
+                </nav>
               </div>
-              <p className="text-xs text-gray-500 mb-2">
-                SIT Bus Tracker v{CURRENT_APP_VERSION}
-              </p>
-              {latestVersion && (
-                <p className="text-xs text-gray-400 mb-1">
-                  Latest: v{latestVersion}
-                </p>
-              )}
-              <p className="text-xs text-gray-400">
-                shetty group of institutions
-              </p>
-            </div>
-            
-            {/* Footer Links */}
-            <div className="grid grid-cols-2 gap-2 pt-4 border-t border-gray-200">
-              <Link 
-                href="/privacy"
-                onClick={() => setShowMobileMenu(false)}
-                className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
-              >
-                Privacy Policy
-              </Link>
-              <Link 
-                href="/terms"
-                onClick={() => setShowMobileMenu(false)}
-                className="text-gray-500 hover:text-blue-600 text-xs py-2 px-3 text-center hover:bg-gray-50 rounded-lg transition-colors"
-              >
-                Terms of Service
-              </Link>
             </div>
           </div>
-        </nav>
-      </div>
-    </div>
-  </div>
-)}
+        )}
       </header>
 
       {/* Main Content with safe area padding */}
-      <div className="flex-1 pt-16 pb-8 safe-area-inset">
+      <div className="flex-1 pt-16 pb-8 android-content-safe">
         
         {/* Enhanced Map Modal with Mobile Back Button */}
         {showMapModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 safe-area-inset" onClick={() => setShowMapModal(false)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 android-modal-safe" onClick={() => setShowMapModal(false)}>
             <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
               {/* Mobile Back Button */}
               {isMobile && (
@@ -910,7 +958,7 @@ export default function ClientHome({ busesWithLocations }) {
 
         {/* Enhanced Login Modal with Mobile Back Button */}
         {showLoginModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 safe-area-inset" onClick={() => setShowLoginModal(false)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 android-modal-safe" onClick={() => setShowLoginModal(false)}>
             <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
               {/* Mobile Back Button */}
               {isMobile && (
@@ -1256,7 +1304,7 @@ export default function ClientHome({ busesWithLocations }) {
         </section>
 
         {/* Footer with Version */}
-        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4 safe-area-bottom">
+        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4 android-footer-safe">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
               <div className="md:col-span-2">
@@ -1379,17 +1427,57 @@ export default function ClientHome({ busesWithLocations }) {
         </footer>
       </div>
 
-      {/* Add CSS for safe areas and animations */}
-      <style jsx>{`
-        .safe-area-inset {
-          padding-left: env(safe-area-inset-left);
-          padding-right: env(safe-area-inset-right);
+      {/* Add CSS for safe areas and Android WebView fixes */}
+      <style jsx global>{`
+        :root {
+          --safe-area-top: 0px;
+          --safe-area-bottom: 0px;
+          --safe-area-left: 0px;
+          --safe-area-right: 0px;
         }
-        .safe-area-top {
-          padding-top: env(safe-area-inset-top);
+        
+        .android-safe-area {
+          padding-left: var(--safe-area-left);
+          padding-right: var(--safe-area-right);
         }
-        .safe-area-bottom {
-          padding-bottom: env(safe-area-inset-bottom);
+        
+        .pt-safe-top {
+          padding-top: var(--safe-area-top);
+        }
+        
+        .android-content-safe {
+          padding-top: calc(64px + var(--safe-area-top));
+          padding-bottom: var(--safe-area-bottom);
+        }
+        
+        .android-footer-safe {
+          padding-bottom: calc(32px + var(--safe-area-bottom));
+        }
+        
+        .android-menu-safe {
+          padding-top: var(--safe-area-top);
+          padding-bottom: var(--safe-area-bottom);
+        }
+        
+        .android-modal-safe {
+          padding-top: var(--safe-area-top);
+          padding-bottom: var(--safe-area-bottom);
+        }
+        
+        /* Fix for Android WebView */
+        @supports (padding: max(0px)) {
+          .pt-safe-top {
+            padding-top: max(var(--safe-area-top), 24px);
+          }
+          
+          .android-content-safe {
+            padding-top: calc(64px + max(var(--safe-area-top), 24px));
+            padding-bottom: max(var(--safe-area-bottom), 16px);
+          }
+          
+          .android-footer-safe {
+            padding-bottom: calc(32px + max(var(--safe-area-bottom), 16px));
+          }
         }
         
         .mobile-menu {
@@ -1418,6 +1506,30 @@ export default function ClientHome({ busesWithLocations }) {
             opacity: 1;
             transform: scale(1);
           }
+        }
+        
+        /* Fix for Android WebView input zoom */
+        @media screen and (-webkit-min-device-pixel-ratio:0) {
+          input, select, textarea {
+            font-size: 16px !important;
+          }
+        }
+        
+        /* Prevent text size adjustment */
+        html {
+          -webkit-text-size-adjust: 100%;
+          text-size-adjust: 100%;
+        }
+        
+        /* Improve touch feedback */
+        .touch-manipulation {
+          touch-action: manipulation;
+        }
+        
+        /* Fix for modal backdrop in Android */
+        .backdrop-blur-sm {
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
         }
       `}</style>
     </div>

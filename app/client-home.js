@@ -629,9 +629,7 @@ export default function ClientHome({ busesWithLocations }) {
                 <AlertTriangle size={18} className="mr-1" />
                 Complaint
               </Link>
-              <Link href="/help" className="text-gray-700 hover:text-blue-600 font-medium transition-colors border-b-2 border-transparent hover:border-blue-600 pb-1 text-sm lg:text-base">
-                Help
-              </Link>
+             
             </nav>
 
             {/* Desktop Login/Logout Buttons */}
@@ -768,14 +766,6 @@ export default function ClientHome({ busesWithLocations }) {
                     <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
                   </Link>
 
-                  <Link 
-                    href="/help"
-                    onClick={() => setShowMobileMenu(false)}
-                    className="text-gray-700 hover:text-blue-600 font-medium transition-colors py-4 px-4 rounded-xl bg-gray-50 hover:bg-blue-50 text-left flex items-center border border-gray-200 hover:border-blue-200 shadow-sm"
-                  >
-                    <Info size={20} className="mr-3 text-blue-600" />
-                    <span className="font-semibold">Help</span>
-                  </Link>
 
                   {/* Update Notification */}
                   {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
@@ -1380,10 +1370,7 @@ export default function ClientHome({ busesWithLocations }) {
               <div>
                 <h4 className="font-semibold text-lg mb-4 text-white">Support</h4>
                 <ul className="space-y-3">
-                  <li><Link href="/help" className="text-gray-400 hover:text-white transition-colors text-base flex items-center">
-                    <Info size={16} className="mr-2" />
-                    Help Center
-                  </Link></li>
+                 
                   <li><Link href="/contact" className="text-gray-400 hover:text-white transition-colors text-base flex items-center">
                     <Phone size={16} className="mr-2" />
                     Contact Us

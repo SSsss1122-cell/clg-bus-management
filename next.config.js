@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",   // 👈 REQUIRED FOR CAPACITOR
+  output: "standalone",   // required for Capacitor
+
+  // DEVELOPMENT ONLY
+  devIndicators: {
+    buildActivity: false,
+  },
+  experimental: {
+    turbo: true,
+  },
 };
 
 module.exports = nextConfig;

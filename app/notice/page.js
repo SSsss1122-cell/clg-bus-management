@@ -274,36 +274,30 @@ export default function NoticesPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Simplified Fixed Header with Large Top Gap */}
+      {/* Simplified Fixed Header */}
       <header className="bg-white shadow-lg fixed left-0 right-0 z-50 app-header">
-        {/* Back Button Row */}
+        {/* Combined Header Row with Back Button and Title */}
         <div className="bg-gradient-to-r from-purple-600 to-indigo-600">
           <div className="max-w-7xl mx-auto px-4">
-            <div className="flex items-center h-14">
+            <div className="flex items-center justify-between h-14">
+              {/* Back Button */}
               <button
                 onClick={handleBackButton}
-                className="flex items-center space-x-2 text-white hover:bg-white/20 active:bg-white/30 px-3 py-2 rounded-lg transition-all"
+                className="flex items-center space-x-2 text-white hover:bg-white/20 active:bg-white/30 p-2 rounded-lg transition-all"
                 aria-label="Go back"
               >
-                <ArrowLeft size={20} />
-                <span className="font-medium">Back</span>
+                <ArrowLeft size={22} />
               </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Title Section */}
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-r from-purple-500 to-indigo-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg">
+              
+              {/* Title and User Name */}
+              <div className="flex items-center space-x-3 flex-1 ml-3">
+                <div className="bg-white/20 backdrop-blur-sm w-10 h-10 rounded-xl flex items-center justify-center">
                   <Bell className="text-white" size={20} />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold text-gray-900">Notices</h1>
+                  <h1 className="text-lg font-bold text-white">Notices</h1>
                   {currentUser?.full_name && (
-                    <p className="text-xs text-gray-600">
+                    <p className="text-xs text-white/90">
                       {currentUser.full_name}
                     </p>
                   )}
@@ -316,10 +310,10 @@ export default function NoticesPage() {
         {/* Tabs Section */}
         <div className="bg-gradient-to-r from-gray-50 to-blue-50 border-b border-gray-200">
           <div className="max-w-7xl mx-auto px-4">
-            <div className="flex space-x-2 py-3">
+            <div className="flex space-x-2 py-2">
               <button
                 onClick={() => setActiveTab('personal')}
-                className={`px-4 py-2.5 rounded-lg transition-all duration-300 flex items-center space-x-2 flex-1 justify-center ${activeTab === 'personal' 
+                className={`px-4 py-2 rounded-lg transition-all duration-300 flex items-center space-x-2 flex-1 justify-center ${activeTab === 'personal' 
                   ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg' 
                   : 'bg-white text-gray-700 hover:bg-gray-50 shadow-sm border border-gray-200'}`}
               >
@@ -336,7 +330,7 @@ export default function NoticesPage() {
 
               <button
                 onClick={() => setActiveTab('general')}
-                className={`px-4 py-2.5 rounded-lg transition-all duration-300 flex items-center space-x-2 flex-1 justify-center ${activeTab === 'general' 
+                className={`px-4 py-2 rounded-lg transition-all duration-300 flex items-center space-x-2 flex-1 justify-center ${activeTab === 'general' 
                   ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg' 
                   : 'bg-white text-gray-700 hover:bg-gray-50 shadow-sm border border-gray-200'}`}
               >
@@ -502,36 +496,45 @@ export default function NoticesPage() {
           margin: 0;
           padding: 0;
           overflow-x: hidden;
+          background: linear-gradient(to bottom right, #eff6ff, #e0e7ff);
         }
         
-        /* Header with LARGE top margin for Android/Capacitor apps */
+        /* Remove any black backgrounds */
+        #__next, .min-h-screen {
+          background: transparent;
+        }
+        
+        /* Header with NO top padding - flush with top */
         .app-header {
           top: 0;
-          padding-top: 60px; /* Large gap for Android status bar */
+          padding-top: 0; /* Remove all top padding */
         }
         
         /* Additional padding for devices with notches/safe areas */
         @supports (padding-top: env(safe-area-inset-top)) {
           .app-header {
-            padding-top: max(60px, calc(env(safe-area-inset-top) + 40px));
+            padding-top: env(safe-area-inset-top); /* Only safe area, no extra padding */
           }
         }
         
-        /* Content area - starts below header with extra spacing */
+        /* Content area - reduced margin */
         .app-content {
-          margin-top: 240px; /* Very large top margin to clear header */
+          margin-top: 120px; /* Much smaller since header is now combined */
           padding-bottom: 40px;
-          min-height: calc(100vh - 240px);
+          min-height: calc(100vh - 120px);
         }
         
         /* Mobile-specific adjustments */
         @media only screen and (max-width: 767px) {
-          .app-header {
-            padding-top: 70px; /* Even more space on mobile */
-          }
-          
           .app-content {
-            margin-top: 260px; /* Extra space for mobile */
+            margin-top: 125px; /* Adjusted for mobile */
+          }
+        }
+        
+        /* Extra small screens */
+        @media only screen and (max-width: 480px) {
+          .app-content {
+            margin-top: 128px; /* Adjusted for small screens */
           }
         }
         

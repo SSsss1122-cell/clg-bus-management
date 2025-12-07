@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { API_BASE } from './lib/constant';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   MapPin, Navigation, Menu, Bell, Megaphone, Info, User, 
   BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, 
   X, ChevronLeft, MessageSquare, Home, Shield, Clock,
-  Download, AlertCircle, CheckCircle, ExternalLink
+  Download, AlertCircle, CheckCircle, ExternalLink, Lock, Eye, EyeOff
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -100,12 +99,12 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
 
   const handleTrackBus = () => {
     if (!isLoggedIn) {
-      alert('Please login first to track buses');
+      showToast('Please login first to track buses', 'warning');
       return;
     }
 
     if (!busCoordinates) {
-      alert('No location data available for this bus');
+      showToast('No location data available for this bus', 'warning');
       return;
     }
 
@@ -230,6 +229,7 @@ export default function ClientHome({ busesWithLocations }) {
   const [showMapModal, setShowMapModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showLoginForm, setShowLoginForm] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [selectedBus, setSelectedBus] = useState(null);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const [loginError, setLoginError] = useState('');
@@ -244,6 +244,57 @@ export default function ClientHome({ busesWithLocations }) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdateRequired, setIsUpdateRequired] = useState(false);
 
+  // Toast notification function
+  const showToast = (message, type = 'info') => {
+    const toastContainer = document.querySelector('.toast-container') || (() => {
+      const container = document.createElement('div');
+      container.className = 'toast-container fixed top-4 right-4 z-[1000] space-y-2 max-w-sm';
+      document.body.appendChild(container);
+      return container;
+    })();
+    
+    const toast = document.createElement('div');
+    const colors = {
+      success: 'from-green-500 to-emerald-600',
+      error: 'from-red-500 to-rose-600',
+      warning: 'from-yellow-500 to-orange-600',
+      info: 'from-blue-500 to-indigo-600'
+    };
+    
+    const icons = {
+      success: '✓',
+      error: '✗',
+      warning: '⚠',
+      info: 'ℹ'
+    };
+    
+    toast.className = `toast bg-gradient-to-r ${colors[type]} text-white px-6 py-4 rounded-xl shadow-xl flex items-center animate-slide-in-right`;
+    toast.innerHTML = `
+      <div class="mr-3 flex-shrink-0 w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+        <span class="font-bold">${icons[type]}</span>
+      </div>
+      <div class="flex-1">
+        <p class="font-medium text-sm">${message}</p>
+      </div>
+      <button onclick="this.parentElement.remove()" class="ml-4 text-white/70 hover:text-white transition-colors">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+      </button>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.classList.add('animate-fade-out');
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 4000);
+  };
+
   // Check if running in Android WebView
   useEffect(() => {
     const checkAndroidWebView = () => {
@@ -251,15 +302,12 @@ export default function ClientHome({ busesWithLocations }) {
       const isAndroidWV = userAgent.includes('android') && userAgent.includes('wv');
       setIsAndroidWebView(isAndroidWV);
       
-      // Apply specific fixes for Android WebView
       if (isAndroidWV) {
-        // Force dark mode support
         document.documentElement.style.setProperty('--safe-area-top', '24px');
         document.documentElement.style.setProperty('--safe-area-bottom', '16px');
         document.documentElement.style.setProperty('--safe-area-left', '0px');
         document.documentElement.style.setProperty('--safe-area-right', '0px');
         
-        // Fix for status bar overlap
         const meta = document.createElement('meta');
         meta.name = 'viewport';
         meta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
@@ -276,9 +324,7 @@ export default function ClientHome({ busesWithLocations }) {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       
-      // Additional fixes for mobile
       if (mobile) {
-        // Prevent zoom on focus
         document.addEventListener('focusin', (e) => {
           if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
             window.requestAnimationFrame(() => {
@@ -314,14 +360,12 @@ export default function ClientHome({ busesWithLocations }) {
           setLatestVersion(data.version);
           setUpdateData(data);
           
-          // Check if update is needed
           const currentV = CURRENT_APP_VERSION.split('.').map(Number);
           const latestV = data.version.split('.').map(Number);
           
           let needsUpdate = false;
           let updateRequired = data.force_update || false;
           
-          // Simple version comparison
           for (let i = 0; i < Math.max(currentV.length, latestV.length); i++) {
             const curr = currentV[i] || 0;
             const latest = latestV[i] || 0;
@@ -351,9 +395,14 @@ export default function ClientHome({ busesWithLocations }) {
   useEffect(() => {
     const savedUser = localStorage.getItem('sitBusUser');
     if (savedUser) {
-      const user = JSON.parse(savedUser);
-      setCurrentUser(user);
-      setIsLoggedIn(true);
+      try {
+        const user = JSON.parse(savedUser);
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+      } catch (error) {
+        console.error('Error parsing saved user:', error);
+        localStorage.removeItem('sitBusUser');
+      }
     }
   }, []);
 
@@ -383,7 +432,6 @@ export default function ClientHome({ busesWithLocations }) {
   useEffect(() => {
     if (showMobileMenu || showMapModal || showLoginModal || showUpdateModal) {
       document.body.style.overflow = 'hidden';
-      // Fix for Android WebView scrolling issues
       if (isAndroidWebView) {
         document.documentElement.style.overflow = 'hidden';
       }
@@ -415,38 +463,45 @@ export default function ClientHome({ busesWithLocations }) {
     
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
+const API_BASE = "https://clg-bus-management-efz8l9uax-sssss1122-cells-projects.vercel.app";
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const credentials = {
-      usn: formData.get('usn'),
-      password: formData.get('password')
-    };
+const handleLogin = async (e) => {
+  e.preventDefault();
 
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) throw new Error(result.message);
-
-      setCurrentUser(result.data);
-      setIsLoggedIn(true);
-      localStorage.setItem('sitBusUser', JSON.stringify(result.data));
-      setShowLoginModal(false);
-      setShowMobileMenu(false);
-      alert('Login successful! Welcome ' + result.data.full_name);
-      e.target.reset();
-
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
+  const formData = new FormData(e.target);
+  const credentials = {
+    usn: formData.get("usn"),
+    password: formData.get("password")
   };
+
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials), // <-- use credentials here
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) throw new Error(result.message);
+
+    setCurrentUser(result.data);
+    setIsLoggedIn(true);
+    localStorage.setItem("sitBusUser", JSON.stringify(result.data));
+
+    setShowLoginModal(false);
+    setShowMobileMenu(false);
+
+    alert("Login successful! Welcome " + result.data.full_name);
+
+    e.target.reset();
+
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+};
+
+
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -486,7 +541,7 @@ export default function ClientHome({ busesWithLocations }) {
     setIsLoggedIn(false);
     localStorage.removeItem('sitBusUser');
     setShowMobileMenu(false);
-    alert('Logged out successfully');
+    showToast('Logged out successfully', 'success');
   };
 
   const handleUpdateNow = () => {
@@ -629,7 +684,6 @@ export default function ClientHome({ busesWithLocations }) {
                 <AlertTriangle size={18} className="mr-1" />
                 Complaint
               </Link>
-             
             </nav>
 
             {/* Desktop Login/Logout Buttons */}
@@ -642,7 +696,7 @@ export default function ClientHome({ busesWithLocations }) {
                   </div>
                   <button 
                     onClick={handleLogout}
-                    className="bg-red-500 text-white px-3 lg:px-4 py-2 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-sm text-sm lg:text-base"
+                    className="bg-gradient-to-r from-red-500 to-rose-600 text-white px-3 lg:px-4 py-2 rounded-lg font-medium hover:from-red-600 hover:to-rose-700 transition-all shadow-sm text-sm lg:text-base"
                   >
                     Logout
                   </button>
@@ -660,7 +714,7 @@ export default function ClientHome({ busesWithLocations }) {
             {/* Mobile Menu Button */}
             <div className="md:hidden flex items-center space-x-2">
               {isLoggedIn && (
-                <div className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium max-w-[100px] truncate">
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-1 rounded-full text-xs font-medium max-w-[100px] truncate">
                   {currentUser?.full_name?.split(' ')[0]}
                 </div>
               )}
@@ -765,7 +819,6 @@ export default function ClientHome({ busesWithLocations }) {
                     <AlertTriangle size={20} className={`mr-3 ${!isLoggedIn ? 'text-gray-400' : 'text-red-600'}`} />
                     <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
                   </Link>
-
 
                   {/* Update Notification */}
                   {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
@@ -977,38 +1030,57 @@ export default function ClientHome({ busesWithLocations }) {
               <div className="p-6">
                 {/* Login Form */}
                 {showLoginForm ? (
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <Hash size={16} className="inline mr-2" />
-                        USN *
-                      </label>
-                      <input
-                        type="text"
-                        name="usn"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Enter your USN"
-                      />
-                    </div>
+                  <form onSubmit={handleLogin} className="space-y-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Hash size={16} className="inline mr-2 text-blue-600" />
+                          USN *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            name="usn"
+                            required
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Enter your USN"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Hash size={18} />
+                          </div>
+                        </div>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <LogIn size={16} className="inline mr-2" />
-                        Password *
-                      </label>
-                      <input
-                        type="password"
-                        name="password"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Enter your password"
-                      />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Lock size={16} className="inline mr-2 text-blue-600" />
+                          Password *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            name="password"
+                            required
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Enter your password"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Lock size={18} />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg touch-manipulation"
+                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg touch-manipulation flex items-center justify-center"
                     >
                       Login to SIT Bus System
                     </button>
@@ -1025,123 +1097,157 @@ export default function ClientHome({ busesWithLocations }) {
                     </p>
                   </form>
                 ) : (
-                  <form onSubmit={handleRegister} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <User size={16} className="inline mr-2" />
-                        Full Name *
-                      </label>
-                      <input
-                        type="text"
-                        name="full_name"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Enter your full name"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                  <form onSubmit={handleRegister} className="space-y-6">
+                    <div className="grid grid-cols-1 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          <BookOpen size={16} className="inline mr-2" />
-                          Class *
+                          <User size={16} className="inline mr-2 text-green-600" />
+                          Full Name *
                         </label>
-                        <input
-                          type="text"
-                          name="class"
-                          required
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                          placeholder="e.g., 3rd Year"
-                        />
+                        <div className="relative">
+                          <input
+                            type="text"
+                            name="full_name"
+                            required
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Enter your full name"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <User size={18} />
+                          </div>
+                        </div>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <BookOpen size={16} className="inline mr-2 text-green-600" />
+                            Class *
+                          </label>
+                          <input
+                            type="text"
+                            name="class"
+                            required
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="e.g., 3rd Year"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Division
+                          </label>
+                          <input
+                            type="text"
+                            name="division"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="e.g., A"
+                          />
+                        </div>
+                      </div>
+
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Division
+                          <Hash size={16} className="inline mr-2 text-green-600" />
+                          USN *
                         </label>
-                        <input
-                          type="text"
-                          name="division"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                          placeholder="e.g., A"
-                        />
+                        <div className="relative">
+                          <input
+                            type="text"
+                            name="usn"
+                            required
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="e.g., 1SI20CS001"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Hash size={18} />
+                          </div>
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <Hash size={16} className="inline mr-2" />
-                        USN *
-                      </label>
-                      <input
-                        type="text"
-                        name="usn"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="e.g., 1SI20CS001"
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Branch
+                        </label>
+                        <select
+                          name="branch"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                        >
+                          <option value="">Select Branch</option>
+                          <option value="Computer Science">Computer Science</option>
+                          <option value="Information Science">Information Science</option>
+                          <option value="Electronics & Communication">Electronics & Communication</option>
+                          <option value="Mechanical">Mechanical</option>
+                          <option value="Civil">Civil</option>
+                          <option value="Electrical">Electrical</option>
+                        </select>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Branch
-                      </label>
-                      <select
-                        name="branch"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                      >
-                        <option value="">Select Branch</option>
-                        <option value="Computer Science">Computer Science</option>
-                        <option value="Information Science">Information Science</option>
-                        <option value="Electronics & Communication">Electronics & Communication</option>
-                        <option value="Mechanical">Mechanical</option>
-                        <option value="Civil">Civil</option>
-                        <option value="Electrical">Electrical</option>
-                      </select>
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Phone size={16} className="inline mr-2 text-green-600" />
+                          Phone Number
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="tel"
+                            name="phone"
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Enter phone number"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Phone size={18} />
+                          </div>
+                        </div>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <Phone size={16} className="inline mr-2" />
-                        Phone Number
-                      </label>
-                      <input
-                        type="tel"
-                        name="phone"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Enter phone number"
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Mail size={16} className="inline mr-2 text-green-600" />
+                          Email
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="email"
+                            name="email"
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Enter email address"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Mail size={18} />
+                          </div>
+                        </div>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <Mail size={16} className="inline mr-2" />
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        name="email"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Enter email address"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        <LogIn size={16} className="inline mr-2" />
-                        Password *
-                      </label>
-                      <input
-                        type="password"
-                        name="password"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
-                        placeholder="Create a password"
-                      />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Lock size={16} className="inline mr-2 text-green-600" />
+                          Password *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            name="password"
+                            required
+                            className="w-full px-4 py-3 pl-11 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white text-gray-900 transition-all touch-manipulation"
+                            placeholder="Create a password"
+                          />
+                          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                            <Lock size={18} />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg touch-manipulation"
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg touch-manipulation flex items-center justify-center"
                     >
                       Create Account
                     </button>
@@ -1370,7 +1476,6 @@ export default function ClientHome({ busesWithLocations }) {
               <div>
                 <h4 className="font-semibold text-lg mb-4 text-white">Support</h4>
                 <ul className="space-y-3">
-                 
                   <li><Link href="/contact" className="text-gray-400 hover:text-white transition-colors text-base flex items-center">
                     <Phone size={16} className="mr-2" />
                     Contact Us
@@ -1414,7 +1519,10 @@ export default function ClientHome({ busesWithLocations }) {
         </footer>
       </div>
 
-      {/* Add CSS for safe areas and Android WebView fixes */}
+      {/* Toast Container */}
+      <div className="toast-container"></div>
+
+      {/* Add CSS for animations and safe areas */}
       <style jsx global>{`
         :root {
           --safe-area-top: 0px;
@@ -1467,21 +1575,36 @@ export default function ClientHome({ busesWithLocations }) {
           }
         }
         
-        .mobile-menu {
-          animation: slideInRight 0.3s ease-out;
-        }
-        
+        /* Animations */
         @keyframes slideInRight {
           from {
+            opacity: 0;
             transform: translateX(100%);
           }
           to {
+            opacity: 1;
             transform: translateX(0);
           }
         }
         
-        .animate-scale-in {
-          animation: scaleIn 0.2s ease-out;
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes fadeOut {
+          from {
+            opacity: 1;
+          }
+          to {
+            opacity: 0;
+          }
         }
         
         @keyframes scaleIn {
@@ -1493,6 +1616,65 @@ export default function ClientHome({ busesWithLocations }) {
             opacity: 1;
             transform: scale(1);
           }
+        }
+        
+        @keyframes slideInRight {
+          from {
+            opacity: 0;
+            transform: translateX(100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+          20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        @keyframes check {
+          0% { stroke-dashoffset: 20; }
+          100% { stroke-dashoffset: 0; }
+        }
+        
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        .animate-shake {
+          animation: shake 0.5s ease-in-out;
+        }
+        
+        .animate-check {
+          animation: check 0.5s ease-in-out forwards;
+        }
+        
+        .animate-fade-in {
+          animation: fadeIn 0.3s ease-out;
+        }
+        
+        .animate-slide-in-right {
+          animation: slideInRight 0.3s ease-out;
+        }
+        
+        .animate-fade-out {
+          animation: fadeOut 0.3s ease-out forwards;
+        }
+        
+        .animate-scale-in {
+          animation: scaleIn 0.2s ease-out;
+        }
+        
+        .mobile-menu {
+          animation: slideInRight 0.3s ease-out;
         }
         
         /* Fix for Android WebView input zoom */
@@ -1517,6 +1699,13 @@ export default function ClientHome({ busesWithLocations }) {
         .backdrop-blur-sm {
           backdrop-filter: blur(4px);
           -webkit-backdrop-filter: blur(4px);
+        }
+        
+        /* Form focus styles */
+        input:focus, select:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
       `}</style>
     </div>

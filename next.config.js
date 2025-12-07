@@ -1,14 +1,10 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: "standalone",   // required for Capacitor
-
-  // DEVELOPMENT ONLY
-  devIndicators: {
-    buildActivity: false,
-  },
-  experimental: {
-    turbo: true,
+module.exports = {
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "https://clg-bus-management-efz8l9uax-sssss1122-cells-projects.vercel.app/api/:path*",
+      },
+    ];
   },
 };
-
-module.exports = nextConfig;

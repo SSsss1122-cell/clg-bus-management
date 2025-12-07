@@ -1,32 +1,46 @@
+// app/api/auth/login/route.js
 import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-// OPTIONS (preflight) request
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
+// OPTIONS handler for CORS preflight - THIS IS CRITICAL
+export async function OPTIONS(request) {
+  const origin = request.headers.get('origin') || '*';
+  
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Max-Age': '86400', // 24 hours
+      'Vary': 'Origin', // Important for caching
+    },
+  });
 }
 
-// POST request
-export async function POST(req) {
+// POST handler
+export async function POST(request) {
+  const origin = request.headers.get('origin') || '*';
+  
   try {
-    // Parse JSON body
-    const body = await req.json();  
-    const { usn, password } = body;
+    const { usn, password } = await request.json();
+
+    console.log('🔐 API Login request:', { usn });
 
     if (!usn || !password) {
-      return new NextResponse(
-        JSON.stringify({ success: false, message: "USN and password required" }),
-        { status: 400, headers: corsHeaders }
+      return NextResponse.json(
+        { success: false, message: "USN and password required" },
+        {
+          status: 400,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Content-Type': 'application/json',
+          }
+        }
       );
     }
 
-    // Query Supabase
     const { data, error } = await supabase
       .from("students")
       .select("*")
@@ -35,22 +49,48 @@ export async function POST(req) {
       .single();
 
     if (error || !data) {
-      return new NextResponse(
-        JSON.stringify({ success: false, message: "Invalid credentials" }),
-        { status: 401, headers: corsHeaders }
+      return NextResponse.json(
+        { success: false, message: "Invalid credentials" },
+        {
+          status: 401,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Content-Type': 'application/json',
+          }
+        }
       );
     }
 
     const { password: _, ...student } = data;
 
-    return new NextResponse(
-      JSON.stringify({ success: true, message: "Login successful", data: student }),
-      { status: 200, headers: corsHeaders }
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "Login successful", 
+        data: student 
+      },
+      {
+        status: 200,
+        headers: {
+          'Access-Control-Allow-Origin': origin,
+          'Content-Type': 'application/json',
+        }
+      }
     );
+
   } catch (err) {
-    return new NextResponse(
-      JSON.stringify({ success: false, message: err.message }),
-      { status: 500, headers: corsHeaders }
+    console.error('🔥 Login route error:', err);
+    const origin = request.headers.get('origin') || '*';
+    
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      {
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': origin,
+          'Content-Type': 'application/json',
+        }
+      }
     );
   }
 }

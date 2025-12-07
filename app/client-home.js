@@ -463,41 +463,78 @@ export default function ClientHome({ busesWithLocations }) {
     
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
-const API_BASE = "https://clg-bus-management-efz8l9uax-sssss1122-cells-projects.vercel.app";
+  
 
 const handleLogin = async (e) => {
   e.preventDefault();
 
   const formData = new FormData(e.target);
   const credentials = {
-    usn: formData.get("usn"),
+    usn: formData.get("usn").toUpperCase(),
     password: formData.get("password")
   };
 
+  console.log('🔐 Login attempt with:', {
+    usn: credentials.usn,
+    password: credentials.password.substring(0, 2) + '***' // Hide full password
+  });
+
+  const API_URL = 'https://clg-bus-management-efz8l9uax-sssss1122-cells-projects.vercel.app/api/auth/login';
+
   try {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(credentials), // <-- use credentials here
+    console.log('📡 Calling API:', API_URL);
+    
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(credentials),
     });
 
-    const result = await response.json();
+    console.log('📄 Response status:', response.status);
+    console.log('📄 Response ok:', response.ok);
 
-    if (!response.ok) throw new Error(result.message);
+    // Get the response as text first
+    const responseText = await response.text();
+    console.log('📄 Raw response:', responseText);
 
+    // Parse the JSON
+    let result;
+    try {
+      result = JSON.parse(responseText);
+      console.log('📄 Parsed result:', result);
+    } catch (parseError) {
+      console.error('❌ Failed to parse JSON:', parseError);
+      throw new Error(`Invalid response: ${responseText.substring(0, 100)}`);
+    }
+
+    if (!response.ok) {
+      // 401 error - Invalid credentials
+      if (response.status === 401) {
+        throw new Error('Invalid USN or password. Please check your credentials.');
+      }
+      throw new Error(result.message || `Login failed (${response.status})`);
+    }
+
+    console.log('✅ Login successful:', result);
+    
+    // Handle successful login
     setCurrentUser(result.data);
     setIsLoggedIn(true);
     localStorage.setItem("sitBusUser", JSON.stringify(result.data));
-
+    
     setShowLoginModal(false);
     setShowMobileMenu(false);
-
-    alert("Login successful! Welcome " + result.data.full_name);
-
+    
+    showToast(`Welcome ${result.data.full_name}!`, 'success');
+    
     e.target.reset();
 
-  } catch (err) {
-    alert("Error: " + err.message);
+  } catch (error) {
+    console.error('❌ Full login error:', error);
+    showToast('Login failed: ' + error.message, 'error');
   }
 };
 

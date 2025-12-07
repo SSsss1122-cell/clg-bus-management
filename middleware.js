@@ -1,7 +1,9 @@
-// middleware.js
+// middleware.js (at project root)
 import { NextResponse } from 'next/server';
 
 export function middleware(request) {
+  console.log('Middleware running for:', request.url);
+  
   // Handle preflight requests
   if (request.method === 'OPTIONS') {
     return new NextResponse(null, {
@@ -14,7 +16,7 @@ export function middleware(request) {
     });
   }
 
-  // Add CORS headers to all API responses
+  // For actual requests, add CORS headers
   const response = NextResponse.next();
   
   response.headers.set('Access-Control-Allow-Origin', '*');
@@ -24,7 +26,6 @@ export function middleware(request) {
   return response;
 }
 
-// Apply middleware to specific paths
 export const config = {
   matcher: '/api/:path*',
 };

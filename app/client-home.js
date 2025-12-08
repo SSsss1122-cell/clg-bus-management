@@ -464,62 +464,53 @@ export default function ClientHome({ busesWithLocations }) {
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
   
+const API_URL = '/api/auth/login'; // Local route
+
 const handleLogin = async (e) => {
   e.preventDefault();
 
   const formData = new FormData(e.target);
   const credentials = {
-    usn: formData.get("usn").toUpperCase(),
-    password: formData.get("password")
+    usn: formData.get('usn').toUpperCase(),
+    password: formData.get('password'),
   };
 
-  console.log('Login attempt for:', credentials.usn);
-
-  // CALL YOUR LOCAL API, NOT THE EXTERNAL ONE
-  const API_URL = '/api/login'; // This calls your local Next.js API
-
   try {
-    console.log('Calling LOCAL API:', API_URL);
-    
     const response = await fetch(API_URL, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
 
-    console.log('Response status:', response.status);
+    const contentType = response.headers.get('content-type');
+    let result;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Login failed (${response.status}): ${errorText}`);
+    if (contentType && contentType.includes('application/json')) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      throw new Error(`Server returned non-JSON response: ${text}`);
     }
 
-    const result = await response.json();
-    console.log('Login successful:', result);
-    
-    if (result.success) {
-      // Handle successful login
-      setCurrentUser(result.data);
-      setIsLoggedIn(true);
-      localStorage.setItem("sitBusUser", JSON.stringify(result.data));
-      
-      setShowLoginModal(false);
-      setShowMobileMenu(false);
-      
-      showToast(`Welcome ${result.data.full_name}!`, 'success');
-      
-      e.target.reset();
-    } else {
+    if (!response.ok || !result.success) {
       throw new Error(result.message || 'Login failed');
     }
+
+    console.log('Login successful:', result);
+    setCurrentUser(result.data);
+    setIsLoggedIn(true);
+    localStorage.setItem('sitBusUser', JSON.stringify(result.data));
+    setShowLoginModal(false);
+    setShowMobileMenu(false);
+    showToast(`Welcome ${result.data.full_name}!`, 'success');
+    e.target.reset();
 
   } catch (error) {
     console.error('Login error:', error);
     showToast('Login failed: ' + error.message, 'error');
   }
 };
+
 
   const handleRegister = async (e) => {
     e.preventDefault();

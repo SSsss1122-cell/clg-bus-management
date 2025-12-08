@@ -2,14 +2,26 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabase';
 
-// Force JSON runtime (prevents HTML error responses)
 export const runtime = 'nodejs';
+
+// Add this GET handler
+export async function GET(req) {
+  return jsonResponse(
+    { 
+      success: false, 
+      message: "Please use POST method to login",
+      endpoint: "/api/auth/login",
+      method: "POST",
+      requiredFields: ["usn", "password"]
+    },
+    405 // Method Not Allowed
+  );
+}
 
 export async function POST(req) {
   try {
     let body;
 
-    // Parse request body safely
     try {
       body = await req.json();
     } catch (err) {
@@ -28,7 +40,6 @@ export async function POST(req) {
       );
     }
 
-    // Supabase query
     const { data: user, error } = await supabase
       .from("students")
       .select("*")
@@ -43,7 +54,6 @@ export async function POST(req) {
       );
     }
 
-    // Remove password before sending response
     const { password: removed, ...student } = user;
 
     return jsonResponse(
@@ -60,20 +70,18 @@ export async function POST(req) {
   }
 }
 
-// CORS + JSON Response Helper
 function jsonResponse(body, status = 200) {
   return NextResponse.json(body, {
     status,
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
 }
 
-// OPTIONS (for CORS)
 export function OPTIONS() {
   return jsonResponse({}, 200);
 }

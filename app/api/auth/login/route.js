@@ -4,20 +4,6 @@ import { supabase } from '../../../lib/supabase';
 
 export const runtime = 'nodejs';
 
-// Add this GET handler
-export async function GET(req) {
-  return jsonResponse(
-    { 
-      success: false, 
-      message: "Please use POST method to login",
-      endpoint: "/api/auth/login",
-      method: "POST",
-      requiredFields: ["usn", "password"]
-    },
-    405 // Method Not Allowed
-  );
-}
-
 export async function POST(req) {
   try {
     let body;
@@ -40,16 +26,43 @@ export async function POST(req) {
       );
     }
 
+    // 🔍 STEP 1: Check what we're searching for
+    const searchUSN = usn.toUpperCase();
+    console.log("=== LOGIN ATTEMPT ===");
+    console.log("Searching for USN:", searchUSN);
+    console.log("Password provided:", password);
+
+    // 🔍 STEP 2: First, let's see ALL students (for debugging)
+    const { data: allStudents, error: allError } = await supabase
+      .from("students")
+      .select("usn, password");
+    
+    console.log("All students in DB:", allStudents);
+
+    // 🔍 STEP 3: Now try the actual query
     const { data: user, error } = await supabase
       .from("students")
       .select("*")
-      .eq("usn", usn.toUpperCase())
+      .eq("usn", searchUSN)
       .eq("password", password)
       .single();
 
+    console.log("Query error:", error);
+    console.log("User found:", user);
+
     if (error || !user) {
       return jsonResponse(
-        { success: false, message: "Invalid credentials" },
+        { 
+          success: false, 
+          message: "Invalid credentials",
+          // 🔍 DEBUG INFO (remove this in production)
+          debug: {
+            searchedUSN: searchUSN,
+            searchedPassword: password,
+            totalStudentsInDB: allStudents?.length || 0,
+            error: error?.message
+          }
+        },
         401
       );
     }

@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1",
+      "methods": ["GET", "POST", "OPTIONS"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "x-vercel-protection-bypass": "1"
+      }
+    }
+  ],
+  "protectionBypass": true
+}

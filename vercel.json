@@ -6,9 +6,9 @@
       "methods": ["GET", "POST", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
-        "x-vercel-protection-bypass": "1"
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
       }
     }
-  ],
-  "protectionBypass": true
+  ]
 }

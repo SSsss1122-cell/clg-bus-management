@@ -464,7 +464,7 @@ export default function ClientHome({ busesWithLocations }) {
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
   
-const API_URL = '/api/auth/login'; // Local route
+const API_URL = process.env.NEXT_PUBLIC_API_URL; // Use environment variable
 
 const handleLogin = async (e) => {
   e.preventDefault();
@@ -510,6 +510,7 @@ const handleLogin = async (e) => {
     showToast('Login failed: ' + error.message, 'error');
   }
 };
+
 
 
   const handleRegister = async (e) => {

@@ -4,6 +4,31 @@ import { supabase } from '../../../lib/supabase';
 
 export const runtime = 'nodejs';
 
+// ========================
+// 🔹 GET REQUEST
+// ========================
+export async function GET(req) {
+  const { searchParams } = new URL(req.url);
+
+  const usn = searchParams.get("usn");
+  const password = searchParams.get("password");
+
+  return jsonResponse(
+    {
+      success: true,
+      message: "GET request received",
+      data: {
+        usn: usn || null,
+        password: password || null
+      }
+    },
+    200
+  );
+}
+
+// ========================
+// 🔹 POST REQUEST
+// ========================
 export async function POST(req) {
   try {
     let body;
@@ -26,20 +51,14 @@ export async function POST(req) {
       );
     }
 
-    // 🔍 STEP 1: Check what we're searching for
     const searchUSN = usn.toUpperCase();
-    console.log("=== LOGIN ATTEMPT ===");
-    console.log("Searching for USN:", searchUSN);
-    console.log("Password provided:", password);
 
-    // 🔍 STEP 2: First, let's see ALL students (for debugging)
-    const { data: allStudents, error: allError } = await supabase
+    // Check all students (debug)
+    const { data: allStudents } = await supabase
       .from("students")
       .select("usn, password");
-    
-    console.log("All students in DB:", allStudents);
 
-    // 🔍 STEP 3: Now try the actual query
+    // Actual login query
     const { data: user, error } = await supabase
       .from("students")
       .select("*")
@@ -47,15 +66,11 @@ export async function POST(req) {
       .eq("password", password)
       .single();
 
-    console.log("Query error:", error);
-    console.log("User found:", user);
-
     if (error || !user) {
       return jsonResponse(
-        { 
-          success: false, 
+        {
+          success: false,
           message: "Invalid credentials",
-          // 🔍 DEBUG INFO (remove this in production)
           debug: {
             searchedUSN: searchUSN,
             searchedPassword: password,
@@ -75,7 +90,6 @@ export async function POST(req) {
     );
 
   } catch (err) {
-    console.error("Fatal Login Error:", err);
     return jsonResponse(
       { success: false, message: "Internal server error", error: err.message },
       500
@@ -83,6 +97,16 @@ export async function POST(req) {
   }
 }
 
+// ========================
+// 🔹 OPTIONS REQUEST
+// ========================
+export function OPTIONS() {
+  return jsonResponse({}, 200);
+}
+
+// ========================
+// 🔹 RESPONSE FORMATTER
+// ========================
 function jsonResponse(body, status = 200) {
   return NextResponse.json(body, {
     status,
@@ -93,8 +117,4 @@ function jsonResponse(body, status = 200) {
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
-}
-
-export function OPTIONS() {
-  return jsonResponse({}, 200);
 }

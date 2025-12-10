@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "capacitor.config.js"  ],
+, "capacitor.config.ts", "capacitor.config.jon"  ],
   "exclude": ["node_modules"]
 }

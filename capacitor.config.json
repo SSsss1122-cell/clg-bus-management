@@ -1,0 +1,9 @@
+{
+  "appId": "com.bus.management",
+  "appName": "bus-management",
+  "webDir": "public",
+  "server": {
+    "url": "https://sit-system-oryqkd295-sssss1122-cells-projects.vercel.app",
+    "cleartext": true
+  }
+}

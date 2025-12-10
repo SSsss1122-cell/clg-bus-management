@@ -13,52 +13,44 @@ export async function GET(req) {
   const usn = searchParams.get("usn");
   const password = searchParams.get("password");
 
-  return jsonResponse(
-    {
-      success: true,
-      message: "GET request received",
-      data: {
-        usn: usn || null,
-        password: password || null
-      }
-    },
-    200
-  );
+  if (!usn || !password) {
+    return jsonResponse({
+      success: false,
+      message: "USN and password required"
+    }, 400);
+  }
+
+  return await handleLogin(usn, password);
 }
 
 // ========================
 // 🔹 POST REQUEST
 // ========================
 export async function POST(req) {
+  let body;
   try {
-    let body;
+    body = await req.json();
+  } catch (err) {
+    return jsonResponse({ success: false, message: "Invalid JSON body" }, 400);
+  }
 
-    try {
-      body = await req.json();
-    } catch (err) {
-      return jsonResponse(
-        { success: false, message: "Invalid JSON body" },
-        400
-      );
-    }
+  const { usn, password } = body;
 
-    const { usn, password } = body;
+  if (!usn || !password) {
+    return jsonResponse({ success: false, message: "USN and password required" }, 400);
+  }
 
-    if (!usn || !password) {
-      return jsonResponse(
-        { success: false, message: "USN and password required" },
-        400
-      );
-    }
+  return await handleLogin(usn, password);
+}
 
+// ========================
+// 🔹 COMMON LOGIN HANDLER
+// ========================
+async function handleLogin(usn, password) {
+  try {
     const searchUSN = usn.toUpperCase();
 
-    // Check all students (debug)
-    const { data: allStudents } = await supabase
-      .from("students")
-      .select("usn, password");
-
-    // Actual login query
+    // Fetch the user from Supabase
     const { data: user, error } = await supabase
       .from("students")
       .select("*")
@@ -67,33 +59,26 @@ export async function POST(req) {
       .single();
 
     if (error || !user) {
-      return jsonResponse(
-        {
-          success: false,
-          message: "Invalid credentials",
-          debug: {
-            searchedUSN: searchUSN,
-            searchedPassword: password,
-            totalStudentsInDB: allStudents?.length || 0,
-            error: error?.message
-          }
-        },
-        401
-      );
+      return jsonResponse({
+        success: false,
+        message: "Invalid credentials"
+      }, 401);
     }
 
     const { password: removed, ...student } = user;
 
-    return jsonResponse(
-      { success: true, message: "Login successful", data: student },
-      200
-    );
+    return jsonResponse({
+      success: true,
+      message: "Login successful",
+      data: student
+    }, 200);
 
   } catch (err) {
-    return jsonResponse(
-      { success: false, message: "Internal server error", error: err.message },
-      500
-    );
+    return jsonResponse({
+      success: false,
+      message: "Internal server error",
+      error: err.message
+    }, 500);
   }
 }
 
@@ -112,9 +97,9 @@ function jsonResponse(body, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "*", // ✅ Allow mobile apps
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 }

@@ -21,81 +21,146 @@ const supabase = createClient(
 const CURRENT_APP_VERSION = "2.1.0";
 
 // Bus Card Component
-function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
+// Bus Card Component with corrected location fetching logic
+function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
   const busImages = ["/images/bus1.png", "/images/bus2.png"];
   const imageSrc = busImages[index % busImages.length];
 
   const [currentStop, setCurrentStop] = useState(null);
   const [nextStop, setNextStop] = useState(null);
-  const [busCoordinates, setBusCoordinates] = useState(coordinates);
+  const [busCoordinates, setBusCoordinates] = useState(null);
   const [isLive, setIsLive] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    async function loadStopInfo() {
-      if (!bus?.id) return;
+    async function loadBusData() {
+      if (!bus?.id) {
+        setIsLoading(false);
+        return;
+      }
 
-      const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
-      
-      const { data: location } = await supabase
-        .from("bus_locations")
-        .select("*")
-        .eq("bus_id", bus.id)
-        .gte("updated_at", tenSecondsAgo)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      try {
+        // Get latest location from bus_locations table - SAME AS FIRST FILE
+        const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+        
+        const { data: locationData, error: locationError } = await supabase
+          .from('bus_locations')
+          .select('*')
+          .eq('bus_id', bus.id)
+          .gte('updated_at', tenSecondsAgo)
+          .order('updated_at', { ascending: false })
+          .limit(1);
 
-      const isLocationRecent = location && (new Date() - new Date(location.updated_at)) < 10000;
-      
-      if (isLocationRecent) {
-        setBusCoordinates({
-          lat: location.latitude,
-          lng: location.longitude,
-        });
-        setIsLive(true);
-
-        const { data: stops } = await supabase
-          .from("bus_stops")
-          .select("*")
-          .eq("bus_id", bus.id)
-          .order("sequence", { ascending: true });
-
-        if (!stops?.length) return;
-
-        let nearestStop = null;
-        let smallestDistance = Infinity;
-
-        stops.forEach((stop) => {
-          const distance =
-            Math.pow(stop.latitude - location.latitude, 2) +
-            Math.pow(stop.longitude - location.longitude, 2);
-
-          if (distance < smallestDistance) {
-            smallestDistance = distance;
-            nearestStop = stop;
-          }
-        });
-
-        setCurrentStop(nearestStop);
-
-        if (nearestStop) {
-          const currentIndex = stops.findIndex((s) => s.id === nearestStop.id);
-          setNextStop(stops[currentIndex + 1] || null);
+        if (locationError && locationError.code !== 'PGRST116') {
+          console.warn(`Bus ${bus.bus_number} location fetch issue:`, locationError.message || 'Unknown error');
         }
-      } else {
+
+        // Get the latest location (first item in the array)
+        const location = locationData && locationData.length > 0 ? locationData[0] : null;
+
+        const now = new Date();
+        const locationTime = location ? new Date(location.updated_at) : null;
+        const isLocationRecent = locationTime && (now - locationTime) < 30000; // 30 seconds threshold
+        
+        if (isLocationRecent && location) {
+          setBusCoordinates({
+            lat: location.latitude,
+            lng: location.longitude,
+          });
+          setLastUpdated(locationTime);
+          setIsLive(true);
+
+          // Get bus stops for this bus
+          const { data: stops, error: stopsError } = await supabase
+            .from("bus_stops")
+            .select("*")
+            .eq("bus_id", bus.id)
+            .order("sequence", { ascending: true });
+
+          if (!stopsError && stops?.length) {
+            // Find nearest stop based on coordinates
+            let nearestStop = null;
+            let smallestDistance = Infinity;
+
+            stops.forEach((stop) => {
+              if (stop.latitude && stop.longitude) {
+                const distance = calculateDistance(
+                  location.latitude,
+                  location.longitude,
+                  stop.latitude,
+                  stop.longitude
+                );
+
+                if (distance < smallestDistance) {
+                  smallestDistance = distance;
+                  nearestStop = stop;
+                }
+              }
+            });
+
+            setCurrentStop(nearestStop);
+
+            if (nearestStop) {
+              const currentIndex = stops.findIndex((s) => s.id === nearestStop.id);
+              setNextStop(stops[currentIndex + 1] || null);
+            } else {
+              setCurrentStop(stops[0]);
+              setNextStop(stops[1] || null);
+            }
+          }
+        } else {
+          setBusCoordinates(null);
+          setIsLive(false);
+          setLastUpdated(null);
+          
+          // Still try to get bus stops even if no live location
+          const { data: stops } = await supabase
+            .from("bus_stops")
+            .select("*")
+            .eq("bus_id", bus.id)
+            .order("sequence", { ascending: true })
+            .limit(2);
+
+          if (stops?.length) {
+            setCurrentStop(stops[0]);
+            setNextStop(stops[1] || null);
+          }
+        }
+      } catch (error) {
+        console.error('Error in bus data loading:', error);
         setBusCoordinates(null);
         setIsLive(false);
-        setCurrentStop(null);
-        setNextStop(null);
+        setLastUpdated(null);
+      } finally {
+        setIsLoading(false);
       }
     }
 
-    loadStopInfo();
+    loadBusData();
     
-    const interval = setInterval(loadStopInfo, 5000);
+    // Update every 10 seconds for live tracking
+    const interval = setInterval(loadBusData, 10000);
     
     return () => clearInterval(interval);
-  }, [bus, coordinates]);
+  }, [bus]);
+
+  // Helper function to calculate distance between coordinates
+  function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  function toRad(degrees) {
+    return degrees * (Math.PI/180);
+  }
 
   const handleTrackBus = () => {
     if (!isLoggedIn) {
@@ -110,6 +175,34 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
 
     onTrackBus(bus, busCoordinates);
   };
+
+  // Format last updated time
+  const formatTimeAgo = (date) => {
+    if (!date) return "N/A";
+    
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) return "Just now";
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hr ago`;
+    return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm w-full">
+        <div className="animate-pulse">
+          <div className="h-48 bg-gradient-to-br from-gray-200 to-gray-300"></div>
+          <div className="p-4">
+            <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:border-blue-400 hover:transform hover:scale-[1.02] shadow-sm w-full group">
@@ -200,6 +293,14 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
               {isLive ? 'Live Tracking' : 'Bus Not Active'}
             </span>
           </div>
+          {isLive && lastUpdated && (
+            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+              <span className="text-gray-600 text-xs">Last Updated:</span>
+              <span className="font-semibold text-gray-700 text-xs">
+                {formatTimeAgo(lastUpdated)}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 pt-3 border-t border-gray-200">
@@ -221,7 +322,7 @@ function BusCard({ bus, index, coordinates, isLoggedIn, onTrackBus }) {
   );
 }
 
-export default function ClientHome({ busesWithLocations }) {
+export default function ClientHome() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -232,10 +333,10 @@ export default function ClientHome({ busesWithLocations }) {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedBus, setSelectedBus] = useState(null);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
-  const [loginError, setLoginError] = useState('');
-  const [registerError, setRegisterError] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   const [isAndroidWebView, setIsAndroidWebView] = useState(false);
+  const [buses, setBuses] = useState([]);
+  const [isLoadingBuses, setIsLoadingBuses] = useState(true);
   
   // Version state
   const [appVersion, setAppVersion] = useState(CURRENT_APP_VERSION);
@@ -294,6 +395,35 @@ export default function ClientHome({ busesWithLocations }) {
       }, 300);
     }, 4000);
   };
+
+  // Fetch buses from Supabase
+  useEffect(() => {
+    async function fetchBuses() {
+      try {
+        setIsLoadingBuses(true);
+        const { data, error } = await supabase
+          .from('buses')
+          .select('*')
+          .order('bus_number', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching buses:', error);
+          showToast('Failed to load buses', 'error');
+          return;
+        }
+
+        console.log('Buses loaded:', data?.length || 0);
+        setBuses(data || []);
+      } catch (error) {
+        console.error('Error in fetchBuses:', error);
+        showToast('Error loading bus data', 'error');
+      } finally {
+        setIsLoadingBuses(false);
+      }
+    }
+
+    fetchBuses();
+  }, []);
 
   // Check if running in Android WebView
   useEffect(() => {
@@ -464,54 +594,50 @@ export default function ClientHome({ busesWithLocations }) {
     return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
   };
   
-const API_URL = process.env.NEXT_PUBLIC_API_URL; // Use environment variable
+  const handleLogin = async (e) => {
+    e.preventDefault();
 
-const handleLogin = async (e) => {
-  e.preventDefault();
+    const formData = new FormData(e.target);
+    const credentials = {
+      usn: formData.get('usn').toUpperCase(),
+      password: formData.get('password'),
+    };
 
-  const formData = new FormData(e.target);
-  const credentials = {
-    usn: formData.get('usn').toUpperCase(),
-    password: formData.get('password'),
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+      });
+
+      const contentType = response.headers.get('content-type');
+      let result;
+
+      if (contentType && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`Server returned non-JSON response: ${text}`);
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Login failed');
+      }
+
+      console.log('Login successful:', result);
+      setCurrentUser(result.data);
+      setIsLoggedIn(true);
+      localStorage.setItem('sitBusUser', JSON.stringify(result.data));
+      setShowLoginModal(false);
+      setShowMobileMenu(false);
+      showToast(`Welcome ${result.data.full_name}!`, 'success');
+      e.target.reset();
+
+    } catch (error) {
+      console.error('Login error:', error);
+      showToast('Login failed: ' + error.message, 'error');
+    }
   };
-
-  try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials),
-    });
-
-    const contentType = response.headers.get('content-type');
-    let result;
-
-    if (contentType && contentType.includes('application/json')) {
-      result = await response.json();
-    } else {
-      const text = await response.text();
-      throw new Error(`Server returned non-JSON response: ${text}`);
-    }
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.message || 'Login failed');
-    }
-
-    console.log('Login successful:', result);
-    setCurrentUser(result.data);
-    setIsLoggedIn(true);
-    localStorage.setItem('sitBusUser', JSON.stringify(result.data));
-    setShowLoginModal(false);
-    setShowMobileMenu(false);
-    showToast(`Welcome ${result.data.full_name}!`, 'success');
-    e.target.reset();
-
-  } catch (error) {
-    console.error('Login error:', error);
-    showToast('Login failed: ' + error.message, 'error');
-  }
-};
-
-
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -1330,7 +1456,7 @@ const handleLogin = async (e) => {
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
                 <div className="text-center">
-                  <div className="text-lg md:text-xl font-bold text-white">{busesWithLocations?.length || 0}</div>
+                  <div className="text-lg md:text-xl font-bold text-white">{buses?.length || 0}</div>
                   <div className="text-xs md:text-sm text-white opacity-90">Buses</div>
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
@@ -1376,28 +1502,31 @@ const handleLogin = async (e) => {
                 Campus Buses
               </h2>
               <p className="text-gray-600 max-w-2xl mx-auto text-base md:text-lg px-4">
-                {busesWithLocations?.length > 0 
-                  ? 'Track your bus in real-time and never miss your ride' 
-                  : 'No buses are currently available. Buses will appear here when they are assigned.'}
+                {isLoadingBuses 
+                  ? 'Loading buses...' 
+                  : buses?.length > 0 
+                    ? 'Track your bus in real-time and never miss your ride' 
+                    : 'No buses are currently available. Buses will appear here when they are assigned.'}
               </p>
             </div>
             
-            {busesWithLocations?.length > 0 && (
+            {isLoadingBuses ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            ) : buses?.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 justify-items-center">
-                {busesWithLocations.map((bus, index) => (
+                {buses.map((bus, index) => (
                   <BusCard 
                     key={bus.id}
                     bus={bus}
                     index={index}
-                    coordinates={bus.coordinates}
                     isLoggedIn={isLoggedIn}
                     onTrackBus={handleTrackBus}
                   />
                 ))}
               </div>
-            )}
-            
-            {busesWithLocations?.length === 0 && (
+            ) : (
               <div className="text-center py-16">
                 <div className="bg-gray-100 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
                   <Navigation className="text-gray-400" size={32} />

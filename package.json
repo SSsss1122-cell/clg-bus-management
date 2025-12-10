@@ -12,6 +12,8 @@
     "@capacitor/android": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@googlemaps/js-api-loader": "^2.0.2",
+    "@react-google-maps/api": "^2.20.7",
     "@supabase/supabase-js": "^2.84.0",
     "@vercel/analytics": "^1.6.1",
     "bcryptjs": "^3.0.3",

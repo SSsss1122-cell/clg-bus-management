@@ -1,27 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   MapPin, Navigation, Menu, Bell, Megaphone, Info, User, 
   BookOpen, Hash, Phone, Mail, Users, LogIn, AlertTriangle, 
   X, ChevronLeft, MessageSquare, Home, Shield, Clock,
-  Download, AlertCircle, CheckCircle, ExternalLink, Lock, Eye, EyeOff
+  Lock, Eye, EyeOff, ZoomIn, ZoomOut
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
-// Current app version (hardcoded for now, will be compared with DB)
-const CURRENT_APP_VERSION = "2.1.0";
+// Initialize Supabase
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://default-dummy.supabase.co';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-key-for-debug';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Bus Card Component
-// Bus Card Component with corrected location fetching logic
 function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
   const busImages = ["/images/bus1.png", "/images/bus2.png"];
   const imageSrc = busImages[index % busImages.length];
@@ -32,6 +28,10 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
   const [isLive, setIsLive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [driverInfo, setDriverInfo] = useState({
+    name: bus?.driver_name || "Not Assigned",
+    contact: bus?.driver_number || "N/A"
+  });
 
   useEffect(() => {
     async function loadBusData() {
@@ -41,7 +41,21 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
       }
 
       try {
-        // Get latest location from bus_locations table - SAME AS FIRST FILE
+        // First, fetch bus details including driver info
+        const { data: busDetails, error: busError } = await supabase
+          .from('buses')
+          .select('driver_name, driver_number, bus_number, route_name')
+          .eq('id', bus.id)
+          .single();
+
+        if (!busError && busDetails) {
+          setDriverInfo({
+            name: busDetails.driver_name || "Not Assigned",
+            contact: busDetails.driver_number || "N/A"
+          });
+        }
+
+        // Get latest location from bus_locations table
         const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
         
         const { data: locationData, error: locationError } = await supabase
@@ -56,7 +70,7 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
           console.warn(`Bus ${bus.bus_number} location fetch issue:`, locationError.message || 'Unknown error');
         }
 
-        // Get the latest location (first item in the array)
+        // Get the latest location
         const location = locationData && locationData.length > 0 ? locationData[0] : null;
 
         const now = new Date();
@@ -67,11 +81,12 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
           setBusCoordinates({
             lat: location.latitude,
             lng: location.longitude,
+            speed: location.speed || 0
           });
           setLastUpdated(locationTime);
           setIsLive(true);
 
-          // Get bus stops for this bus
+          // Get bus stops
           const { data: stops, error: stopsError } = await supabase
             .from("bus_stops")
             .select("*")
@@ -79,7 +94,6 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
             .order("sequence", { ascending: true });
 
           if (!stopsError && stops?.length) {
-            // Find nearest stop based on coordinates
             let nearestStop = null;
             let smallestDistance = Infinity;
 
@@ -114,7 +128,6 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
           setIsLive(false);
           setLastUpdated(null);
           
-          // Still try to get bus stops even if no live location
           const { data: stops } = await supabase
             .from("bus_stops")
             .select("*")
@@ -139,15 +152,14 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
 
     loadBusData();
     
-    // Update every 10 seconds for live tracking
+    // Update every 10 seconds
     const interval = setInterval(loadBusData, 10000);
     
     return () => clearInterval(interval);
   }, [bus]);
 
-  // Helper function to calculate distance between coordinates
   function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth's radius in kilometers
+    const R = 6371;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     const a = 
@@ -173,10 +185,9 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
       return;
     }
 
-    onTrackBus(bus, busCoordinates);
+    onTrackBus(bus, busCoordinates, driverInfo);
   };
 
-  // Format last updated time
   const formatTimeAgo = (date) => {
     if (!date) return "N/A";
     
@@ -261,8 +272,8 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
                 <User size={16} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-800 text-sm truncate">{bus.driver_name || "Driver Not Assigned"}</p>
-                <p className="text-xs text-gray-600 truncate">Contact: {bus.driver_number || "N/A"}</p>
+                <p className="font-semibold text-gray-800 text-sm truncate">{driverInfo.name}</p>
+                <p className="text-xs text-gray-600 truncate">Contact: {driverInfo.contact}</p>
               </div>
             </div>
           </div>
@@ -322,6 +333,450 @@ function BusCard({ bus, index, isLoggedIn, onTrackBus }) {
   );
 }
 
+// Real Map Modal using OpenStreetMap
+// Real Map Modal using OpenStreetMap - SIMPLIFIED VERSION
+function RealMapModal({ bus, initialCoordinates, driverInfo, onClose }) {
+  const [currentLocation, setCurrentLocation] = useState(initialCoordinates);
+  const [lastUpdateTime, setLastUpdateTime] = useState(new Date());
+  const [isConnected, setIsConnected] = useState(true);
+  const [updateCount, setUpdateCount] = useState(0);
+  const [map, setMap] = useState(null);
+  const [marker, setMarker] = useState(null);
+  const [isMapLoading, setIsMapLoading] = useState(true);
+  
+  const mapRef = useRef(null);
+  const updateIntervalRef = useRef(null);
+  const lastCoordinatesRef = useRef(initialCoordinates);
+  const mapInstanceRef = useRef(null);
+
+  // Load Leaflet CSS and JS dynamically
+  useEffect(() => {
+    setIsMapLoading(true);
+    
+    // Check if Leaflet is already loaded globally
+    if (window.L) {
+      initializeMap();
+      return;
+    }
+
+    // Load Leaflet CSS only if not already loaded
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const leafletCSS = document.createElement('link');
+      leafletCSS.rel = 'stylesheet';
+      leafletCSS.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      leafletCSS.crossOrigin = '';
+      document.head.appendChild(leafletCSS);
+    }
+
+    // Load Leaflet JS only if not already loaded
+    if (!window.L) {
+      const leafletJS = document.createElement('script');
+      leafletJS.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      leafletJS.crossOrigin = '';
+      leafletJS.async = true;
+      
+      leafletJS.onload = () => {
+        console.log('Leaflet loaded successfully');
+        initializeMap();
+      };
+      
+      leafletJS.onerror = () => {
+        console.error('Failed to load Leaflet');
+        setIsMapLoading(false);
+      };
+      
+      document.head.appendChild(leafletJS);
+    } else {
+      initializeMap();
+    }
+
+    return () => {
+      // Cleanup on unmount
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+      }
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        } catch (error) {
+          console.error('Error removing map:', error);
+        }
+      }
+    };
+  }, []);
+
+  // Initialize the map
+  const initializeMap = () => {
+    if (!window.L || !mapRef.current) {
+      console.log('Leaflet not loaded or map container not ready');
+      setIsMapLoading(false);
+      return;
+    }
+
+    const L = window.L;
+    
+    // IMPORTANT: Clear any existing map from the container
+    if (mapRef.current._leaflet_id) {
+      // If container already has a map, remove it first
+      try {
+        const existingMap = L.DomUtil.get(mapRef.current);
+        if (existingMap && existingMap._leaflet_id) {
+          L.DomUtil.remove(existingMap);
+        }
+      } catch (error) {
+        console.log('Could not remove existing map, creating new container');
+      }
+    }
+
+    try {
+      // Create a fresh container for the map
+      const container = mapRef.current;
+      
+      // Clear any existing content
+      container.innerHTML = '';
+      
+      // Create a new div for the map
+      const mapDiv = document.createElement('div');
+      mapDiv.style.width = '100%';
+      mapDiv.style.height = '100%';
+      mapDiv.id = 'leaflet-map-' + Date.now();
+      container.appendChild(mapDiv);
+
+      // Initialize map on the new div
+      const mapInstance = L.map(mapDiv.id, {
+        center: [currentLocation?.lat || 12.9716, currentLocation?.lng || 77.5946],
+        zoom: 16,
+        zoomControl: false
+      });
+
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(mapInstance);
+
+      // Create custom bus icon
+      const busIcon = L.divIcon({
+        html: `
+          <div style="
+            width: 32px;
+            height: 32px;
+            background: #EA4335;
+            border-radius: 50%;
+            border: 3px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            animation: pulse 1.5s infinite;
+          ">
+            <span style="color: white; font-size: 14px; font-weight: bold;">🚌</span>
+          </div>
+          <style>
+            @keyframes pulse {
+              0% { transform: scale(1); }
+              50% { transform: scale(1.1); }
+              100% { transform: scale(1); }
+            }
+          </style>
+        `,
+        className: 'bus-icon',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+
+      // Add bus marker
+      const markerInstance = L.marker(
+        [currentLocation?.lat || 12.9716, currentLocation?.lng || 77.5946],
+        { icon: busIcon }
+      ).addTo(mapInstance);
+
+      // Add popup with driver info
+      markerInstance.bindPopup(`
+        <div style="padding: 8px; min-width: 200px;">
+          <div style="display: flex; align-items: center; margin-bottom: 8px;">
+            <div style="width: 30px; height: 30px; background: #EA4335; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px;">
+              <span style="color: white; font-size: 14px;">🚌</span>
+            </div>
+            <div>
+              <strong style="color: #1a73e8; font-size: 14px;">Bus ${bus?.bus_number}</strong><br/>
+              <span style="color: #5f6368; font-size: 12px;">${bus?.route_name || 'Route'}</span>
+            </div>
+          </div>
+          <div style="border-top: 1px solid #e0e0e0; padding-top: 8px; margin-top: 8px;">
+            <div style="font-size: 12px; margin-bottom: 4px;">
+              <strong style="color: #5f6368;">Driver:</strong> ${driverInfo.name}
+            </div>
+            <div style="font-size: 12px; margin-bottom: 4px;">
+              <strong style="color: #5f6368;">Speed:</strong> ${currentLocation?.speed?.toFixed(1) || '0'} km/h
+            </div>
+            <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">
+              Last updated: ${new Date().toLocaleTimeString()}
+            </div>
+          </div>
+        </div>
+      `);
+
+      // Open popup by default
+      markerInstance.openPopup();
+
+      // Add custom zoom controls
+      L.control.zoom({
+        position: 'topright'
+      }).addTo(mapInstance);
+
+      // Store references
+      mapInstanceRef.current = mapInstance;
+      setMap(mapInstance);
+      setMarker(markerInstance);
+      setIsMapLoading(false);
+
+      // Start live updates
+      startLiveUpdates(mapInstance, markerInstance);
+
+    } catch (error) {
+      console.error('Error initializing map:', error);
+      setIsMapLoading(false);
+    }
+  };
+
+  // Start live location updates
+  const startLiveUpdates = (mapInstance, markerInstance) => {
+    if (!bus?.id) return;
+
+    updateIntervalRef.current = setInterval(async () => {
+      try {
+        const { data: locationData, error } = await supabase
+          .from('bus_locations')
+          .select('latitude, longitude, speed, updated_at')
+          .eq('bus_id', bus.id)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (error) {
+          console.error('Error fetching location:', error);
+          setIsConnected(false);
+          return;
+        }
+
+        setIsConnected(true);
+
+        if (locationData && locationData.length > 0) {
+          const newLocation = {
+            lat: locationData[0].latitude,
+            lng: locationData[0].longitude,
+            speed: locationData[0].speed || 0
+          };
+
+          // Check if location has changed
+          const locationChanged = 
+            Math.abs(newLocation.lat - (lastCoordinatesRef.current?.lat || 0)) > 0.00001 ||
+            Math.abs(newLocation.lng - (lastCoordinatesRef.current?.lng || 0)) > 0.00001;
+
+          if (locationChanged && mapInstance && markerInstance) {
+            // Smoothly move the marker
+            markerInstance.setLatLng([newLocation.lat, newLocation.lng]);
+            
+            // Update popup content
+            markerInstance.setPopupContent(`
+              <div style="padding: 8px; min-width: 200px;">
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <div style="width: 30px; height: 30px; background: #EA4335; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px;">
+                    <span style="color: white; font-size: 14px;">🚌</span>
+                  </div>
+                  <div>
+                    <strong style="color: #1a73e8; font-size: 14px;">Bus ${bus?.bus_number}</strong><br/>
+                    <span style="color: #5f6368; font-size: 12px;">${bus?.route_name || 'Route'}</span>
+                  </div>
+                </div>
+                <div style="border-top: 1px solid #e0e0e0; padding-top: 8px; margin-top: 8px;">
+                  <div style="font-size: 12px; margin-bottom: 4px;">
+                    <strong style="color: #5f6368;">Driver:</strong> ${driverInfo.name}
+                  </div>
+                  <div style="font-size: 12px; margin-bottom: 4px;">
+                    <strong style="color: #5f6368;">Speed:</strong> ${newLocation.speed.toFixed(1)} km/h
+                  </div>
+                  <div style="font-size: 12px; margin-bottom: 4px;">
+                    <strong style="color: #5f6368;">Status:</strong> Moving
+                  </div>
+                  <div style="font-size: 11px; color: #5f6368; margin-top: 4px;">
+                    Last updated: ${new Date().toLocaleTimeString()}
+                  </div>
+                </div>
+              </div>
+            `);
+
+            // Update local state
+            setCurrentLocation(newLocation);
+            setLastUpdateTime(new Date());
+            setUpdateCount(prev => prev + 1);
+            lastCoordinatesRef.current = newLocation;
+          }
+        }
+      } catch (error) {
+        console.error('Error updating location:', error);
+        setIsConnected(false);
+      }
+    }, 3000);
+  };
+
+  const formatTime = (date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const handleZoomIn = () => {
+    if (map) {
+      map.zoomIn();
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (map) {
+      map.zoomOut();
+    }
+  };
+
+  const handleCenterMap = () => {
+    if (map && currentLocation) {
+      map.setView([currentLocation.lat, currentLocation.lng], map.getZoom());
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl relative">
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-bold">🚌 Live Tracking: Bus {bus?.bus_number}</h2>
+              <p className="text-blue-100">{bus?.route_name}</p>
+              <div className="flex items-center mt-2">
+                <div className={`w-2 h-2 rounded-full mr-2 animate-pulse ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-sm">
+                  {isConnected ? 'Live updates every 3 seconds' : 'Connection lost - retrying...'}
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={onClose}
+              className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {/* Live Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <p className="text-sm text-gray-600">Driver</p>
+              <p className="font-bold text-gray-800 truncate">{driverInfo.name}</p>
+              <p className="text-xs text-gray-500 mt-1">Contact: {driverInfo.contact}</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <p className="text-sm text-gray-600">Speed</p>
+              <p className="font-bold text-gray-800">
+                {currentLocation?.speed ? `${currentLocation.speed.toFixed(1)} km/h` : "0 km/h"}
+              </p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <p className="text-sm text-gray-600">Last Update</p>
+              <p className="font-bold text-gray-800">{formatTime(lastUpdateTime)}</p>
+            </div>
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+              <p className="text-sm text-gray-600">Updates</p>
+              <p className="font-bold text-gray-800 text-xs">
+                {updateCount} updates
+              </p>
+            </div>
+          </div>
+          
+          {/* Real Map Container */}
+          <div className="relative rounded-xl overflow-hidden border-2 border-gray-300 mb-6" style={{ height: '400px' }}>
+            <div 
+              ref={mapRef}
+              className="w-full h-full"
+              style={{ minHeight: '400px' }}
+            />
+            
+            {isMapLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4 mx-auto"></div>
+                  <p className="text-gray-600">Loading map...</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Live indicator */}
+            {!isMapLoading && (
+              <div className="absolute top-4 right-4 flex items-center space-x-2">
+                <div className="bg-green-600 text-white px-4 py-2 rounded-full flex items-center text-sm font-semibold shadow-lg">
+                  <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
+                  LIVE TRACKING
+                </div>
+              </div>
+            )}
+
+            {/* Map Controls */}
+            {!isMapLoading && (
+              <>
+                <div className="absolute top-4 left-4 bg-white rounded-lg shadow-lg overflow-hidden">
+                  <button
+                    onClick={handleZoomIn}
+                    className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                  >
+                    <ZoomIn size={18} />
+                  </button>
+                  <div className="border-t border-gray-200"></div>
+                  <button
+                    onClick={handleZoomOut}
+                    className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                  >
+                    <ZoomOut size={18} />
+                  </button>
+                </div>
+
+                {/* Center map button */}
+                <button
+                  onClick={handleCenterMap}
+                  className="absolute bottom-4 right-4 bg-white hover:bg-gray-100 text-gray-800 px-4 py-2 rounded-lg shadow-lg flex items-center transition-colors"
+                >
+                  <MapPin size={16} className="mr-2" />
+                  Center on Bus
+                </button>
+              </>
+            )}
+          </div>
+          
+     
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+            <button
+              onClick={handleCenterMap}
+              disabled={isMapLoading}
+              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <MapPin size={18} className="mr-2" />
+              Center on Bus
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+            >
+              Close Tracking
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Main ClientHome Component (the rest remains the same as before)
 export default function ClientHome() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -333,17 +788,11 @@ export default function ClientHome() {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedBus, setSelectedBus] = useState(null);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
+  const [selectedDriverInfo, setSelectedDriverInfo] = useState({ name: "", contact: "" });
   const [isMobile, setIsMobile] = useState(false);
   const [isAndroidWebView, setIsAndroidWebView] = useState(false);
   const [buses, setBuses] = useState([]);
   const [isLoadingBuses, setIsLoadingBuses] = useState(true);
-  
-  // Version state
-  const [appVersion, setAppVersion] = useState(CURRENT_APP_VERSION);
-  const [latestVersion, setLatestVersion] = useState(null);
-  const [updateData, setUpdateData] = useState(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [isUpdateRequired, setIsUpdateRequired] = useState(false);
 
   // Toast notification function
   const showToast = (message, type = 'info') => {
@@ -397,34 +846,60 @@ export default function ClientHome() {
   };
 
   // Fetch buses from Supabase
-  useEffect(() => {
-    async function fetchBuses() {
-      try {
-        setIsLoadingBuses(true);
-        const { data, error } = await supabase
-          .from('buses')
-          .select('*')
-          .order('bus_number', { ascending: true });
+ // Fetch buses from Supabase
+useEffect(() => {
+  async function fetchBuses() {
+    try {
+      setIsLoadingBuses(true);
+      
+      // NEW QUERY WITH DRIVER INFO
+      const { data, error } = await supabase
+        .from('buses')
+        .select(`
+          id,
+          bus_number,
+          route_name,
+          driver_id,
+          drivers!left (
+            name,
+            contact
+          )
+        `)
+        .order('bus_number', { ascending: true });
 
-        if (error) {
-          console.error('Error fetching buses:', error);
-          showToast('Failed to load buses', 'error');
-          return;
-        }
-
-        console.log('Buses loaded:', data?.length || 0);
-        setBuses(data || []);
-      } catch (error) {
-        console.error('Error in fetchBuses:', error);
-        showToast('Error loading bus data', 'error');
-      } finally {
-        setIsLoadingBuses(false);
+      if (error) {
+        console.error('Error fetching buses:', error);
+        showToast('Failed to load buses', 'error');
+        return;
       }
+
+      console.log('Buses loaded with driver info:', data);
+      
+      // Transform data for easy use
+      const busesWithDriverInfo = data?.map(bus => ({
+        id: bus.id,
+        bus_number: bus.bus_number,
+        route_name: bus.route_name,
+        driver_id: bus.driver_id,
+        // Driver info - अगर driver है तो उसका नाम, नहीं तो "Not Assigned"
+        driver_name: bus.drivers?.name || "Not Assigned",
+        driver_number: bus.drivers?.contact || "N/A",
+        // Keep original drivers object too
+        drivers: bus.drivers
+      })) || [];
+      
+      setBuses(busesWithDriverInfo);
+      
+    } catch (error) {
+      console.error('Error in fetchBuses:', error);
+      showToast('Error loading bus data', 'error');
+    } finally {
+      setIsLoadingBuses(false);
     }
+  }
 
-    fetchBuses();
-  }, []);
-
+  fetchBuses();
+}, []);
   // Check if running in Android WebView
   useEffect(() => {
     const checkAndroidWebView = () => {
@@ -437,11 +912,6 @@ export default function ClientHome() {
         document.documentElement.style.setProperty('--safe-area-bottom', '16px');
         document.documentElement.style.setProperty('--safe-area-left', '0px');
         document.documentElement.style.setProperty('--safe-area-right', '0px');
-        
-        const meta = document.createElement('meta');
-        meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
-        document.head.appendChild(meta);
       }
     };
     
@@ -451,74 +921,12 @@ export default function ClientHome() {
   // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      
-      if (mobile) {
-        document.addEventListener('focusin', (e) => {
-          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-            window.requestAnimationFrame(() => {
-              e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            });
-          }
-        });
-      }
+      setIsMobile(window.innerWidth < 768);
     };
     
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Fetch latest app version from Supabase
-  useEffect(() => {
-    async function fetchLatestVersion() {
-      try {
-        const { data, error } = await supabase
-          .from('app_updates')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (error) {
-          console.error('Error fetching app version:', error);
-          return;
-        }
-
-        if (data) {
-          setLatestVersion(data.version);
-          setUpdateData(data);
-          
-          const currentV = CURRENT_APP_VERSION.split('.').map(Number);
-          const latestV = data.version.split('.').map(Number);
-          
-          let needsUpdate = false;
-          let updateRequired = data.force_update || false;
-          
-          for (let i = 0; i < Math.max(currentV.length, latestV.length); i++) {
-            const curr = currentV[i] || 0;
-            const latest = latestV[i] || 0;
-            
-            if (latest > curr) {
-              needsUpdate = true;
-              break;
-            } else if (latest < curr) {
-              break;
-            }
-          }
-          
-          if (needsUpdate) {
-            setIsUpdateRequired(updateRequired);
-            setShowUpdateModal(true);
-          }
-        }
-      } catch (error) {
-        console.error('Error in version check:', error);
-      }
-    }
-
-    fetchLatestVersion();
   }, []);
 
   // Check for existing user session
@@ -560,40 +968,34 @@ export default function ClientHome() {
 
   // Prevent body scroll when modal is open
   useEffect(() => {
-    if (showMobileMenu || showMapModal || showLoginModal || showUpdateModal) {
+    if (showMobileMenu || showMapModal || showLoginModal) {
       document.body.style.overflow = 'hidden';
-      if (isAndroidWebView) {
-        document.documentElement.style.overflow = 'hidden';
-      }
     } else {
       document.body.style.overflow = 'unset';
-      if (isAndroidWebView) {
-        document.documentElement.style.overflow = 'unset';
-      }
     }
     
     return () => {
       document.body.style.overflow = 'unset';
-      if (isAndroidWebView) {
-        document.documentElement.style.overflow = 'unset';
-      }
     };
-  }, [showMobileMenu, showMapModal, showLoginModal, showUpdateModal, isAndroidWebView]);
+  }, [showMobileMenu, showMapModal, showLoginModal]);
 
-  const handleTrackBus = (bus, coordinates) => {
+  const handleTrackBus = (bus, coordinates, driverInfo) => {
+    if (!isLoggedIn) {
+      showToast('Please login first to track buses', 'warning');
+      return;
+    }
+
+    if (!coordinates) {
+      showToast('No location data available for this bus', 'warning');
+      return;
+    }
+
     setSelectedBus(bus);
     setSelectedCoordinates(coordinates);
+    setSelectedDriverInfo(driverInfo);
     setShowMapModal(true);
   };
 
-  const getGoogleMapsUrl = (coordinates) => {
-    if (!coordinates || !coordinates.lat || !coordinates.lng) {
-      return "https://www.google.com/maps/embed/v1/view?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&center=12.9716,77.5946&zoom=15&maptype=roadmap";
-    }
-    
-    return `https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${coordinates.lat},${coordinates.lng}&zoom=16&maptype=roadmap`;
-  };
-  
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -680,96 +1082,10 @@ export default function ClientHome() {
     showToast('Logged out successfully', 'success');
   };
 
-  const handleUpdateNow = () => {
-    if (updateData?.download_url) {
-      window.open(updateData.download_url, '_blank');
-    }
-  };
-
-  const handleSkipUpdate = () => {
-    if (!isUpdateRequired) {
-      setShowUpdateModal(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col android-safe-area">
-      {/* Update Notification Modal */}
-      {showUpdateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 android-modal-safe">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl relative animate-scale-in">
-            <div className={`p-6 rounded-t-2xl ${isUpdateRequired ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-blue-500 to-indigo-600'} text-white`}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                  {isUpdateRequired ? (
-                    <AlertCircle size={24} className="text-white" />
-                  ) : (
-                    <Download size={24} className="text-white" />
-                  )}
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">Update Available</h2>
-                  <p className="text-white/90">Version {latestVersion} is available</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-6">
-              {updateData && (
-                <div className="mb-6">
-                  <h3 className="font-bold text-gray-900 text-lg mb-2">{updateData.title || `What's New in v${latestVersion}`}</h3>
-                  <p className="text-gray-600 mb-4">{updateData.description || 'Bug fixes and performance improvements'}</p>
-                  
-                  <div className="bg-gray-50 p-4 rounded-xl mb-6">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-gray-700">Current Version</span>
-                      <span className="font-semibold text-gray-900">{CURRENT_APP_VERSION}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-700">Latest Version</span>
-                      <span className="font-bold text-blue-600">{latestVersion}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={handleUpdateNow}
-                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3.5 px-4 rounded-xl font-bold hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 touch-manipulation"
-                >
-                  <Download size={18} />
-                  Update Now
-                  <ExternalLink size={16} />
-                </button>
-                
-                {!isUpdateRequired && (
-                  <button
-                    onClick={handleSkipUpdate}
-                    className="flex-1 bg-gradient-to-r from-gray-300 to-gray-400 text-gray-700 py-3.5 px-4 rounded-xl font-bold hover:from-gray-400 hover:to-gray-500 transition-all shadow-sm touch-manipulation"
-                  >
-                    Skip for Now
-                  </button>
-                )}
-              </div>
-              
-              {isUpdateRequired && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle size={16} className="text-red-600" />
-                    <p className="text-sm text-red-700 font-medium">This update is required to continue using the app.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Fixed Navigation Header - Android WebView Compatible */}
-      <header className={`bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isAndroidWebView ? 'pt-6' : 'pt-safe-top'
-      }`}>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col">
+      {/* Enhanced Fixed Navigation Header */}
+      <header className="bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo and Name */}
@@ -789,13 +1105,8 @@ export default function ClientHome() {
                 </div>
               </div>
               <div className="block">
-                <h1 className="text-lg font-bold text-gray-900 leading-tight">SIT Bus</h1>
-                <div className="flex items-center gap-1">
-                  <p className="text-xs text-gray-500 hidden sm:block">v{CURRENT_APP_VERSION}</p>
-                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  )}
-                </div>
+                <h1 className="text-lg font-bold text-gray-900 leading-tight">SIT Bus Tracker</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">Real-time Bus Tracking</p>
               </div>
             </div>
 
@@ -869,7 +1180,7 @@ export default function ClientHome() {
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu - Same as before... */}
         {showMobileMenu && (
           <div className="md:hidden fixed inset-0 z-50">
             {/* Backdrop */}
@@ -888,12 +1199,7 @@ export default function ClientHome() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900 text-lg">Menu</h3>
-                    <div className="flex items-center gap-1">
-                      <p className="text-xs text-gray-500">v{CURRENT_APP_VERSION}</p>
-                      {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
-                      )}
-                    </div>
+                    <p className="text-xs text-gray-500">Real-time Bus Tracking</p>
                   </div>
                 </div>
                 <button 
@@ -906,7 +1212,7 @@ export default function ClientHome() {
               </div>
 
               {/* Scrollable Menu Content */}
-              <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 android-menu-safe bg-white">
+              <div className="h-[calc(100vh-68px)] overflow-y-auto p-4 bg-white">
                 <nav className="flex flex-col space-y-2">
                   {/* Home Link */}
                   <Link 
@@ -956,28 +1262,6 @@ export default function ClientHome() {
                     <span className={`font-semibold ${!isLoggedIn ? 'text-gray-400' : ''}`}>Complaint</span>
                   </Link>
 
-                  {/* Update Notification */}
-                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                    <div 
-                      onClick={() => {
-                        setShowMobileMenu(false);
-                        setShowUpdateModal(true);
-                      }}
-                      className="cursor-pointer mt-4 px-4 py-4 bg-gradient-to-r from-red-50 to-rose-100 rounded-xl border border-red-200 shadow-sm hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 flex items-center justify-center">
-                          <Download size={20} className="text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-bold text-gray-900">Update Available!</p>
-                          <p className="text-sm text-gray-600">Version {latestVersion} is ready</p>
-                        </div>
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Auth Section */}
                   <div className="pt-8 border-t border-gray-200 mt-4 space-y-4">
                     {isLoggedIn ? (
@@ -1020,7 +1304,7 @@ export default function ClientHome() {
                     )}
                   </div>
 
-                  {/* Version and Info Section */}
+                  {/* Info Section */}
                   <div className="pt-8 border-t border-gray-200 mt-4 space-y-3">
                     <div className="text-center">
                       <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full mb-2">
@@ -1028,13 +1312,8 @@ export default function ClientHome() {
                         <span className="text-xs text-blue-600 font-medium">Secure Connection</span>
                       </div>
                       <p className="text-xs text-gray-500 mb-2">
-                        SIT Bus Tracker v{CURRENT_APP_VERSION}
+                        SIT Bus Tracker
                       </p>
-                      {latestVersion && (
-                        <p className="text-xs text-gray-400 mb-1">
-                          Latest: v{latestVersion}
-                        </p>
-                      )}
                       <p className="text-xs text-gray-400">
                         shetty group of institutions
                       </p>
@@ -1065,79 +1344,21 @@ export default function ClientHome() {
         )}
       </header>
 
-      {/* Main Content with safe area padding */}
-      <div className="flex-1 pt-16 pb-8 android-content-safe">
-        
-        {/* Enhanced Map Modal with Mobile Back Button */}
+      {/* Main Content */}
+      <div className="flex-1 pt-16">
+        {/* Real Map Modal */}
         {showMapModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 android-modal-safe" onClick={() => setShowMapModal(false)}>
-            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
-              {/* Mobile Back Button */}
-              {isMobile && (
-                <button 
-                  onClick={() => setShowMapModal(false)}
-                  className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg touch-manipulation"
-                  aria-label="Go back"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-              )}
-              
-              <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
-                <div className="flex justify-between items-center">
-                  <div className={isMobile ? "pr-12" : ""}>
-                    <h2 className="text-2xl font-bold">Tracking Bus {selectedBus?.bus_number}</h2>
-                    <p className="text-blue-100">{selectedBus?.route_name}</p>
-                  </div>
-                  {!isMobile && (
-                    <button onClick={() => setShowMapModal(false)} className="text-white hover:text-blue-200 p-2 rounded-full hover:bg-white/10 transition-colors">
-                      <X size={24} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="p-4 md:p-6">
-                <div className="bg-gray-100 rounded-xl p-4 mb-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-600">Driver:</span>
-                      <p className="font-semibold">{selectedBus?.driver_name || "Not Assigned"}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Current Location:</span>
-                      <p className="font-semibold">{selectedBus?.current_location || "Not Available"}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-600">Next Stop:</span>
-                      <p className="font-semibold text-blue-600">{selectedBus?.next_stop || "Student Union"}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl overflow-hidden border-2 border-gray-300">
-                  <iframe
-                    className="w-full h-80 md:h-96"
-                    frameBorder="0"
-                    style={{ border: 0 }}
-                    allowFullScreen
-                    src={getGoogleMapsUrl(selectedCoordinates)}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  ></iframe>
-                </div>
-                <div className="mt-4 text-center">
-                  <p className="text-gray-600 flex items-center justify-center text-sm">
-                    <MapPin size={16} className="mr-2 text-red-500" />
-                    Live location tracking for Bus {selectedBus?.bus_number}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <RealMapModal
+            bus={selectedBus}
+            initialCoordinates={selectedCoordinates}
+            driverInfo={selectedDriverInfo}
+            onClose={() => setShowMapModal(false)}
+          />
         )}
 
-        {/* Enhanced Login Modal with Mobile Back Button */}
+        {/* Enhanced Login Modal - Same as before... */}
         {showLoginModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 android-modal-safe" onClick={() => setShowLoginModal(false)}>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowLoginModal(false)}>
             <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
               {/* Mobile Back Button */}
               {isMobile && (
@@ -1423,36 +1644,21 @@ export default function ClientHome() {
             <div className="max-w-4xl mx-auto text-center px-4">
               <div className="mb-6">
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 text-white">
-                  SIT Bus Tracker
+                  SIT Bus Live Tracker
                 </h1>
                 <div className="w-20 h-1 bg-gradient-to-r from-green-400 to-emerald-500 mx-auto rounded-full mb-4"></div>
                 <p className="text-base md:text-lg text-white max-w-2xl mx-auto leading-relaxed font-light opacity-95">
-                  Real-time bus tracking & smart campus transportation
+                  Track your bus in real-time on actual maps
                 </p>
-                <div className="flex items-center justify-center gap-2 mt-2">
-                  <p className="text-sm text-blue-200">Version {CURRENT_APP_VERSION}</p>
-                  {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                    <>
-                      <span className="text-gray-300">•</span>
-                      <button 
-                        onClick={() => setShowUpdateModal(true)}
-                        className="text-sm text-yellow-300 hover:text-yellow-200 underline flex items-center gap-1"
-                      >
-                        <Download size={12} />
-                        Update to v{latestVersion}
-                      </button>
-                    </>
-                  )}
-                </div>
               </div>
 
               <div className="flex justify-center items-center gap-4 md:gap-6 mb-6">
                 <div className="text-center">
                   <div className="text-lg md:text-xl font-bold text-white flex items-center justify-center">
                     <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
-                    Live
+                    Live Maps
                   </div>
-                  <div className="text-xs md:text-sm text-white opacity-90">Tracking</div>
+                  <div className="text-xs md:text-sm text-white opacity-90">Real-time tracking</div>
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
                 <div className="text-center">
@@ -1461,8 +1667,8 @@ export default function ClientHome() {
                 </div>
                 <div className="w-px h-6 bg-white/30"></div>
                 <div className="text-center">
-                  <div className="text-lg md:text-xl font-bold text-white">24/7</div>
-                  <div className="text-xs md:text-sm text-white opacity-90">Service</div>
+                  <div className="text-lg md:text-xl font-bold text-white">3s</div>
+                  <div className="text-xs md:text-sm text-white opacity-90">Updates</div>
                 </div>
               </div>
 
@@ -1499,14 +1705,14 @@ export default function ClientHome() {
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-12 md:mb-16">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4 md:mb-6">
-                Campus Buses
+                Live Campus Buses
               </h2>
               <p className="text-gray-600 max-w-2xl mx-auto text-base md:text-lg px-4">
                 {isLoadingBuses 
-                  ? 'Loading buses...' 
+                  ? 'Loading live bus data...' 
                   : buses?.length > 0 
-                    ? 'Track your bus in real-time and never miss your ride' 
-                    : 'No buses are currently available. Buses will appear here when they are assigned.'}
+                    ? 'Click any bus to open live tracking on real map' 
+                    : 'No buses are currently active. Buses will appear here when they start live tracking.'}
               </p>
             </div>
             
@@ -1531,15 +1737,15 @@ export default function ClientHome() {
                 <div className="bg-gray-100 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
                   <Navigation className="text-gray-400" size={32} />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-3">No Buses Available</h3>
-                <p className="text-gray-500 text-base max-w-md mx-auto">All buses are currently offline or not assigned. Check back later for updates.</p>
+                <h3 className="text-xl font-semibold text-gray-700 mb-3">No Active Buses</h3>
+                <p className="text-gray-500 text-base max-w-md mx-auto">All buses are currently offline. Check back later when drivers start live tracking.</p>
               </div>
             )}
           </div>
         </section>
 
-        {/* Footer with Version */}
-        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4 android-footer-safe">
+        {/* Footer */}
+        <footer className="bg-gradient-to-br from-gray-900 to-black text-white pt-12 pb-8 px-4">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
               <div className="md:col-span-2">
@@ -1559,33 +1765,22 @@ export default function ClientHome() {
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold">SIT Bus System</h3>
-                    <div className="flex items-center gap-2">
-                      <p className="text-gray-400 text-sm">v{CURRENT_APP_VERSION}</p>
-                      {latestVersion && latestVersion !== CURRENT_APP_VERSION && (
-                        <button 
-                          onClick={() => setShowUpdateModal(true)}
-                          className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-2 py-0.5 rounded-full flex items-center gap-1"
-                        >
-                          <Download size={10} />
-                          Update
-                        </button>
-                      )}
-                    </div>
+                    <h3 className="text-xl font-bold">SIT Bus Live Tracker</h3>
+                    <p className="text-gray-400 text-sm">Real-time Map Tracking</p>
                   </div>
                 </div>
                 <p className="text-gray-400 mb-6 max-w-md text-base leading-relaxed">
-                  Smart campus transportation with real-time tracking and reliable service for students and staff.
+                  Track your campus bus with real-time maps and live updates.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <div className="bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700">
-                    <span className="text-sm text-gray-300">📍 Live GPS Tracking</span>
+                    <span className="text-sm text-gray-300">📍 Real Maps</span>
                   </div>
                   <div className="bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700">
-                    <span className="text-sm text-gray-300">🔔 Real-time Alerts</span>
+                    <span className="text-sm text-gray-300">🔄 3s Updates</span>
                   </div>
                   <div className="bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700">
-                    <span className="text-sm text-gray-300">🚌 Multiple Buses</span>
+                    <span className="text-sm text-gray-300">🚌 Live Tracking</span>
                   </div>
                 </div>
               </div>
@@ -1631,13 +1826,12 @@ export default function ClientHome() {
               <div className="flex flex-col md:flex-row justify-between items-center">
                 <div className="text-center md:text-left mb-4 md:mb-0">
                   <p className="text-gray-400 text-sm">
-                    © 2024 SIT Bus System. All rights reserved.
+                    © 2024 SIT Bus Live Tracker. All rights reserved.
                   </p>
                   <div className="flex items-center justify-center md:justify-start gap-2 mt-2">
-                    <div className={`w-2 h-2 rounded-full ${latestVersion && latestVersion !== CURRENT_APP_VERSION ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <p className="text-xs text-gray-500">
-                      Version {CURRENT_APP_VERSION} • 
-                      {latestVersion && latestVersion !== CURRENT_APP_VERSION ? ' Update Available' : ' Up to Date'}
+                      Live Map Tracking • Updates every 3 seconds
                     </p>
                   </div>
                 </div>
@@ -1648,9 +1842,6 @@ export default function ClientHome() {
                   <Link href="/terms" className="text-gray-400 hover:text-white text-sm transition-colors">
                     Terms of Service
                   </Link>
-                  <div className="text-gray-500 text-sm">
-                    v{CURRENT_APP_VERSION}
-                  </div>
                 </div>
               </div>
             </div>
@@ -1660,193 +1851,6 @@ export default function ClientHome() {
 
       {/* Toast Container */}
       <div className="toast-container"></div>
-
-      {/* Add CSS for animations and safe areas */}
-      <style jsx global>{`
-        :root {
-          --safe-area-top: 0px;
-          --safe-area-bottom: 0px;
-          --safe-area-left: 0px;
-          --safe-area-right: 0px;
-        }
-        
-        .android-safe-area {
-          padding-left: var(--safe-area-left);
-          padding-right: var(--safe-area-right);
-        }
-        
-        .pt-safe-top {
-          padding-top: var(--safe-area-top);
-        }
-        
-        .android-content-safe {
-          padding-top: calc(64px + var(--safe-area-top));
-          padding-bottom: var(--safe-area-bottom);
-        }
-        
-        .android-footer-safe {
-          padding-bottom: calc(32px + var(--safe-area-bottom));
-        }
-        
-        .android-menu-safe {
-          padding-top: var(--safe-area-top);
-          padding-bottom: var(--safe-area-bottom);
-        }
-        
-        .android-modal-safe {
-          padding-top: var(--safe-area-top);
-          padding-bottom: var(--safe-area-bottom);
-        }
-        
-        /* Fix for Android WebView */
-        @supports (padding: max(0px)) {
-          .pt-safe-top {
-            padding-top: max(var(--safe-area-top), 24px);
-          }
-          
-          .android-content-safe {
-            padding-top: calc(64px + max(var(--safe-area-top), 24px));
-            padding-bottom: max(var(--safe-area-bottom), 16px);
-          }
-          
-          .android-footer-safe {
-            padding-bottom: calc(32px + max(var(--safe-area-bottom), 16px));
-          }
-        }
-        
-        /* Animations */
-        @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(100%);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes fadeOut {
-          from {
-            opacity: 1;
-          }
-          to {
-            opacity: 0;
-          }
-        }
-        
-        @keyframes scaleIn {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        
-        @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(100%);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-          20%, 40%, 60%, 80% { transform: translateX(5px); }
-        }
-        
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        @keyframes check {
-          0% { stroke-dashoffset: 20; }
-          100% { stroke-dashoffset: 0; }
-        }
-        
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        
-        .animate-shake {
-          animation: shake 0.5s ease-in-out;
-        }
-        
-        .animate-check {
-          animation: check 0.5s ease-in-out forwards;
-        }
-        
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-out;
-        }
-        
-        .animate-slide-in-right {
-          animation: slideInRight 0.3s ease-out;
-        }
-        
-        .animate-fade-out {
-          animation: fadeOut 0.3s ease-out forwards;
-        }
-        
-        .animate-scale-in {
-          animation: scaleIn 0.2s ease-out;
-        }
-        
-        .mobile-menu {
-          animation: slideInRight 0.3s ease-out;
-        }
-        
-        /* Fix for Android WebView input zoom */
-        @media screen and (-webkit-min-device-pixel-ratio:0) {
-          input, select, textarea {
-            font-size: 16px !important;
-          }
-        }
-        
-        /* Prevent text size adjustment */
-        html {
-          -webkit-text-size-adjust: 100%;
-          text-size-adjust: 100%;
-        }
-        
-        /* Improve touch feedback */
-        .touch-manipulation {
-          touch-action: manipulation;
-        }
-        
-        /* Fix for modal backdrop in Android */
-        .backdrop-blur-sm {
-          backdrop-filter: blur(4px);
-          -webkit-backdrop-filter: blur(4px);
-        }
-        
-        /* Form focus styles */
-        input:focus, select:focus {
-          outline: none;
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-      `}</style>
     </div>
   );
 }
